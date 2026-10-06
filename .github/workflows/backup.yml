@@ -9,11 +9,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Create backup
         env:
           DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
-        run: pg_dump --dbname="$DATABASE_URL" --format=custom --no-owner --no-acl --file=cay-g.dump
+        run: docker run --rm --network host -e DATABASE_URL="$DATABASE_URL" -v "$PWD:/backup" postgres:17 pg_dump --dbname="$DATABASE_URL" --format=custom --no-owner --no-acl --file=/backup/cay-g.dump
       - uses: actions/upload-artifact@v4
         with:
           name: cay-g-${{ github.run_id }}
