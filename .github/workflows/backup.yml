@@ -1,0 +1,21 @@
+name: Database backup
+on:
+  schedule:
+    - cron: '17 18 * * *'
+  workflow_dispatch:
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Create backup
+        env:
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: pg_dump --dbname="$DATABASE_URL" --format=custom --no-owner --no-acl --file=cay-g.dump
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cay-g-${{ github.run_id }}
+          path: cay-g.dump
+          retention-days: 7

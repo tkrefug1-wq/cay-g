@@ -161,7 +161,7 @@ test('Key has exactly ten fields and secrets are encrypted at rest', async () =>
   assert.equal(decrypt(encrypt('secret')), 'secret');
 });
 test('database sessions and login throttling', async () => {
-  const token = await signIn('CTV@TEST.LOCAL', 'Test-Password-2026!'); assert.equal(token.length, 64); assert.equal(await db.session.count(), 1);
+  const login = await signIn('CTV@TEST.LOCAL', 'Test-Password-2026!'); assert.equal(login.token.length, 64); assert.equal(login.mfa, null); assert.equal(await db.session.count(), 1);
   for (let i = 0; i < 9; i++) await assert.rejects(signIn('ctv@test.local', 'wrong'), /không đúng/);
   await assert.rejects(signIn('ctv@test.local', 'wrong'), /15 phút/);
 });

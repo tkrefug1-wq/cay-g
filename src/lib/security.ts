@@ -33,3 +33,24 @@ export function decrypt(value: string) {
   cipher.setAuthTag(tag);
   return Buffer.concat([cipher.update(data), cipher.final()]).toString('utf8');
 }
+const base32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+export function generateTotpSecret() {
+  const bytes = randomBytes(20); let out = '', bits = 0, value = 0;
+  for (const byte of bytes) { value = (value << 8) | byte; bits += 8; while (bits >= 5) { out += base32[(value >>> (bits - 5)) & 31]; bits -= 5; } }
+  if (bits) out += base32[(value << (5 - bits)) & 31];
+  return out;
+}
+function decodeBase32(input: string) {
+  let bits = 0, value = 0; const out: number[] = [];
+  for (const char of input.replace(/=+$/g, '').toUpperCase()) { const i = base32.indexOf(char); if (i < 0) throw new Error('Invalid TOTP secret'); value = (value << 5) | i; bits += 5; if (bits >= 8) { out.push((value >>> (bits - 8)) & 255); bits -= 8; } }
+  return Buffer.from(out);
+}
+function totp(secret: string, counter: number) {
+  const msg = Buffer.alloc(8); msg.writeBigUInt64BE(BigInt(counter));
+  const h = createHmac('sha1', decodeBase32(secret)).update(msg).digest(); const offset = h[h.length - 1] & 15;
+  return String((h.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, '0');
+}
+export function verifyTotp(secret: string, code: string, now = Date.now()) {
+  if (!/^\d{6}$/.test(code)) return false; const counter = Math.floor(now / 30_000);
+  return [-1, 0, 1].some(delta => timingSafeEqual(Buffer.from(totp(secret, counter + delta)), Buffer.from(code)));
+}
