@@ -1,0 +1,140 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+enum Role {
+  ADMIN
+  CTV
+  CTV_CON
+}
+enum UsageStatus {
+  ACTIVE
+  DONE
+  CANCELLED
+}
+enum SettlementStatus {
+  OPEN
+  CLOSED
+  APPROVED
+  PAID
+}
+model User {
+  id String @id @default(cuid())
+  email String @unique
+  name String
+  passwordHash String
+  role Role
+  parentCtvId String?
+  parent User? @relation("Hierarchy", fields: [parentCtvId], references: [id], onDelete: Restrict)
+  children User[] @relation("Hierarchy")
+  active Boolean @default(true)
+  sessions Session[]
+  keys Key[]
+  settlements Settlement[]
+  createdAt DateTime @default(now())
+  @@index([parentCtvId])
+}
+model Session {
+  tokenHash String @id
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  @@index([expiresAt])
+}
+model LoginAttempt {
+  id String @id @default(cuid())
+  email String
+  createdAt DateTime @default(now())
+  @@index([email, createdAt])
+}
+model Key {
+  id String @id @default(cuid())
+  fullName String
+  normalizedStk String @unique
+  bank String
+  branch String @default("")
+  account String @default("")
+  password String @default("")
+  pin String @default("")
+  phone String @default("")
+  email String @default("")
+  birthDate String @default("")
+  ownerId String?
+  owner User? @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  archived Boolean @default(false)
+  usages Usage[]
+  entries TodayEntry[]
+  createdAt DateTime @default(now())
+  @@index([ownerId, archived, createdAt])
+}
+model Platform {
+  id String @id @default(cuid())
+  name String @unique
+  active Boolean @default(true)
+  usages Usage[]
+}
+model Settlement {
+  id String @id @default(cuid())
+  workerId String
+  worker User @relation(fields: [workerId], references: [id], onDelete: Restrict)
+  date String
+  status SettlementStatus @default(OPEN)
+  deposit Decimal @default(0) @db.Decimal(18, 4)
+  withdrawal Decimal @default(0) @db.Decimal(18, 4)
+  fee Decimal @default(0) @db.Decimal(18, 4)
+  profit Decimal @default(0) @db.Decimal(18, 4)
+  payout Decimal @default(0) @db.Decimal(18, 4)
+  parentCommission Decimal @default(0) @db.Decimal(18, 4)
+  childCommission Decimal @default(0) @db.Decimal(18, 4)
+  adminShare Decimal @default(0) @db.Decimal(18, 4)
+  closedAt DateTime?
+  paidAt DateTime?
+  usages Usage[]
+  @@unique([workerId, date])
+  @@index([date, status])
+}
+model Usage {
+  id String @id @default(cuid())
+  keyId String
+  key Key @relation(fields: [keyId], references: [id], onDelete: Restrict)
+  platformId String
+  platform Platform @relation(fields: [platformId], references: [id], onDelete: Restrict)
+  settlementId String
+  settlement Settlement @relation(fields: [settlementId], references: [id], onDelete: Restrict)
+  deposit Decimal @db.Decimal(18, 4)
+  withdrawal Decimal @default(0) @db.Decimal(18, 4)
+  status UsageStatus @default(ACTIVE)
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  @@unique([keyId, platformId])
+  @@index([settlementId, status])
+}
+model TodayEntry {
+  id String @id @default(cuid())
+  keyId String
+  key Key @relation(fields: [keyId], references: [id], onDelete: Cascade)
+  date String
+  visible Boolean @default(true)
+  @@unique([keyId, date])
+  @@index([date, visible])
+}
+model Idempotency {
+  id String @id
+  actorId String
+  fingerprint String
+  result Json
+  createdAt DateTime @default(now())
+  @@index([createdAt])
+}
+model Audit {
+  id String @id @default(cuid())
+  actorId String
+  action String
+  entityId String
+  detail Json
+  createdAt DateTime @default(now())
+  @@index([entityId, createdAt])
+}

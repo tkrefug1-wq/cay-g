@@ -1,0 +1,36 @@
+services:
+  db:
+    image: postgres:18-bookworm
+    environment:
+      POSTGRES_DB: cayg
+      POSTGRES_USER: cayg
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U cayg -d cayg']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+  migrate:
+    build: {context: ., target: build}
+    command: npm run db:migrate
+    environment:
+      DATABASE_URL: postgresql://cayg:${POSTGRES_PASSWORD}@db:5432/cayg?schema=public
+      KEY_ENCRYPTION_SECRET: ${KEY_ENCRYPTION_SECRET:?Set KEY_ENCRYPTION_SECRET}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-}
+    depends_on:
+      db: {condition: service_healthy}
+  app:
+    build: {context: ., target: runtime}
+    environment:
+      DATABASE_URL: postgresql://cayg:${POSTGRES_PASSWORD}@db:5432/cayg?schema=public
+      APP_ORIGIN: ${APP_ORIGIN:?Set APP_ORIGIN}
+      KEY_ENCRYPTION_SECRET: ${KEY_ENCRYPTION_SECRET:?Set KEY_ENCRYPTION_SECRET}
+    ports: ['127.0.0.1:3000:3000']
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    restart: unless-stopped
+volumes:
+  pgdata:
