@@ -45,7 +45,7 @@ async function importKeys(tx: Tx, actor: Actor, text: string, ownerId: string | 
   const data = parseData(text);
   if (ownerId) await checkDay(tx, ownerId, day());
   const accounts = data.map(d => d.normalizedStk);
-  const existing = await tx.key.findMany({ where: { normalizedStk: { in: accounts } } });
+  const existing = await tx.key.findMany({ where: { normalizedStk: { in: accounts } }, select: { id: true, normalizedStk: true, archived: true, ownerId: true } });
   for (const key of existing) {
     ensure(!key.archived, `STK ${key.normalizedStk} đã lưu trữ, không thể sử dụng`, 409);
     ensure(key.ownerId === ownerId || key.ownerId === null, `STK ${key.normalizedStk} đã thuộc người khác; không thể nhận lại`, 409);
@@ -245,7 +245,7 @@ export async function mutate(actor: Actor, raw: unknown, requestId: string) {
         const result = await execute(tx, freshActor, cmd);
         await tx.idempotency.create({ data: { id, actorId: actor.id, fingerprint, result } });
         return result;
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 10_000, timeout: 30_000 });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, maxWait: 10_000, timeout: 30_000 });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && ['P2034', 'P2002'].includes(error.code) && attempt < 3) continue;
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new AppError('Dữ liệu trùng hoặc đang được xử lý; tải lại và thử lại', 409);
