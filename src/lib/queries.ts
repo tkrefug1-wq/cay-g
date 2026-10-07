@@ -11,7 +11,7 @@ export async function snapshot(actor: Actor, params: URLSearchParams) {
   const search = (params.get('search') ?? '').slice(0, 100);
   return db.$transaction(async tx => {
     const [platforms, workers] = await Promise.all([
-      tx.platform.findMany({ where: { active: true }, orderBy: { name: 'asc' } }),
+      tx.platform.findMany({ where: actor.role === 'ADMIN' ? {} : { active: true }, orderBy: [{ active: 'desc' }, { name: 'asc' }] }),
       actor.role === 'ADMIN' ? tx.user.findMany({ where: { role: { not: 'ADMIN' }, active: true }, select: { id: true, name: true, email: true, role: true, parentCtvId: true }, orderBy: { name: 'asc' } }) : Promise.resolve([]),
     ]);
     if (view === 'settlements') {
@@ -54,7 +54,7 @@ export async function snapshot(actor: Actor, params: URLSearchParams) {
       actor.role !== 'ADMIN' ? tx.settlement.findUnique({ where: { workerId_date: { workerId: actor.id, date } } }) : Promise.resolve(null),
       actor.role !== 'ADMIN' ? calculate(tx, actor.id, date) : Promise.resolve(null),
     ]);
-    const eligible = Object.fromEntries(platforms.map(p => [p.id, keyCount - (used.find(u => u.platformId === p.id)?._count ?? 0)]));
+    const eligible = Object.fromEntries(platforms.filter(p => p.active).map(p => [p.id, keyCount - (used.find(u => u.platformId === p.id)?._count ?? 0)]));
     const rows = keys.map(k => ({ ...k, depositTotal: k.usages.filter(u => u.settlement.date === date).reduce((n, u) => n.plus(u.deposit), decimal(0)), withdrawalTotal: k.usages.filter(u => u.settlement.date === date).reduce((n, u) => n.plus(u.withdrawal), decimal(0)) }));
     return { view, date, page, pageSize, total, platforms, workers, keys: rows, eligible, settlement, totals: settlement && settlement.status !== 'OPEN' ? { deposit: settlement.deposit, withdrawal: settlement.withdrawal, fee: settlement.fee, profit: settlement.profit, payout: settlement.payout, parentCommission: settlement.parentCommission, childCommission: settlement.childCommission, adminShare: settlement.adminShare, incomplete: 0 } : totals };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 30_000 });

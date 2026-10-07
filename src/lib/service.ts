@@ -18,6 +18,8 @@ export const commandSchema = z.discriminatedUnion('action', [
   base.extend({ action: z.literal('close') }),
   z.object({ action: z.literal('transition'), settlementId: z.string(), target: z.enum(['CLOSED', 'APPROVED', 'PAID']) }),
   z.object({ action: z.literal('platform'), name: z.string().trim().min(1).max(80) }),
+  z.object({ action: z.literal('platformRename'), id: z.string(), name: z.string().trim().min(1).max(80) }),
+  z.object({ action: z.literal('platformDelete'), id: z.string() }),
   z.object({ action: z.literal('worker'), name: z.string().trim().min(1).max(100), email: z.email().max(200), password: z.string().min(12).max(200), role: z.enum(['CTV', 'CTV_CON']), parentCtvId: z.string().nullable() }),
 ]);
 export type Command = z.infer<typeof commandSchema>;
@@ -185,6 +187,23 @@ async function execute(tx: Tx, actor: Actor, cmd: Command): Promise<Prisma.Input
       const platform = await tx.platform.create({ data: { name: cmd.name } });
       await audit(tx, actor, 'CREATE_PLATFORM', platform.id);
       return { id: platform.id };
+    }
+    case 'platformRename': {
+      admin(actor);
+      const platform = await tx.platform.findUnique({ where: { id: cmd.id } });
+      ensure(platform, 'Không tìm thấy Platform', 404);
+      await tx.platform.update({ where: { id: cmd.id }, data: { name: cmd.name } });
+      await audit(tx, actor, 'RENAME_PLATFORM', cmd.id, { before: platform.name, after: cmd.name });
+      return { updated: true };
+    }
+    case 'platformDelete': {
+      admin(actor);
+      const platform = await tx.platform.findUnique({ where: { id: cmd.id }, include: { _count: { select: { usages: true } } } });
+      ensure(platform, 'Không tìm thấy Platform', 404);
+      if (platform._count.usages) await tx.platform.update({ where: { id: cmd.id }, data: { active: false } });
+      else await tx.platform.delete({ where: { id: cmd.id } });
+      await audit(tx, actor, platform._count.usages ? 'ARCHIVE_PLATFORM' : 'DELETE_PLATFORM', cmd.id, { name: platform.name, usages: platform._count.usages });
+      return { deleted: !platform._count.usages, archived: !!platform._count.usages };
     }
     case 'worker': {
       admin(actor);
