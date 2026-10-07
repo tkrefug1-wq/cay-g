@@ -46,6 +46,26 @@ export async function snapshot(actor: Actor, params: URLSearchParams) {
       ensure(matches.length <= 5000, 'Tối đa 5.000 Key mỗi lần; hãy thu hẹp bộ lọc');
       return { ids: matches.map(k => k.id), total: matches.length, platforms, workers };
     }
+    const scope = params.get('scope') ?? 'all';
+    const usageWhere: Prisma.UsageWhereInput = { status: { not: 'CANCELLED' }, ...(['today', 'summary'].includes(view) ? { settlement: { date, workerId: actor.id } } : {}) };
+    if (scope === 'table') {
+      const [keys, total] = await Promise.all([
+        tx.key.findMany({ where, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], skip: (page - 1) * pageSize, take: pageSize, select: { id: true, fullName: true, normalizedStk: true, bank: true, archived: true, owner: { select: { id: true, name: true, role: true } }, usages: { where: usageWhere, select: { id: true, platformId: true, deposit: true, withdrawal: true, status: true, settlement: { select: { date: true, status: true } } } } } }),
+        tx.key.count({ where }),
+      ]);
+      const rows = keys.map(k => ({ ...k, depositTotal: k.usages.reduce((n, u) => n.plus(u.deposit), decimal(0)), withdrawalTotal: k.usages.reduce((n, u) => n.plus(u.withdrawal), decimal(0)) }));
+      return { view, date, page, pageSize, total, platforms, workers, keys: rows };
+    }
+    if (scope === 'meta') {
+      const [keyCount, used, settlement, totals] = await Promise.all([
+        tx.key.count({ where: { ownerId: actor.id, archived: false } }),
+        tx.usage.groupBy({ by: ['platformId'], where: { key: { ownerId: actor.id, archived: false }, status: { not: 'CANCELLED' } }, _count: true }),
+        tx.settlement.findUnique({ where: { workerId_date: { workerId: actor.id, date } } }),
+        calculate(tx, actor.id, date),
+      ]);
+      const eligible = Object.fromEntries(platforms.filter(p => p.active).map(p => [p.id, keyCount - (used.find(u => u.platformId === p.id)?._count ?? 0)]));
+      return { eligible, settlement, totals: settlement && settlement.status !== 'OPEN' ? { deposit: settlement.deposit, withdrawal: settlement.withdrawal, fee: settlement.fee, profit: settlement.profit, payout: settlement.payout, parentCommission: settlement.parentCommission, childCommission: settlement.childCommission, adminShare: settlement.adminShare, incomplete: 0 } : totals };
+    }
     const [keys, total, keyCount, used, settlement, totals] = await Promise.all([
       tx.key.findMany({ where, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], skip: (page - 1) * pageSize, take: pageSize, select: { id: true, fullName: true, normalizedStk: true, bank: true, archived: true, owner: { select: { id: true, name: true, role: true } }, usages: { where: { status: { not: 'CANCELLED' } }, select: { id: true, platformId: true, deposit: true, withdrawal: true, status: true, settlement: { select: { date: true, status: true } } } } } }),
       tx.key.count({ where }),

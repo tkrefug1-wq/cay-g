@@ -168,6 +168,7 @@ export default function Workspace({ user }: { user: User }) {
           archived: String(archived),
           [view === "settlements" ? "workerId" : "ownerId"]: filter,
         });
+        q.set("scope", "table");
         const r = await fetch(`/api/workspace?${q}`, { cache: "no-store" });
         if (r.status === 401) {
           window.location.assign("/login");
@@ -178,6 +179,14 @@ export default function Workspace({ user }: { user: User }) {
         if (generation.current === gen) {
           setData(result);
           setError("");
+          if (!background) setLoading(false);
+        }
+        if (!isAdmin && generation.current === gen) {
+          q.set("scope", "meta");
+          const metaResponse = await fetch(`/api/workspace?${q}`, { cache: "no-store" });
+          const meta = await metaResponse.json();
+          if (!metaResponse.ok) throw new Error(meta.error);
+          if (generation.current === gen) setData((current) => (current ? { ...current, ...meta, keys: current.keys, total: current.total } : current));
         }
       } catch (err) {
         if (generation.current === gen) setError((err as Error).message);
@@ -185,7 +194,7 @@ export default function Workspace({ user }: { user: User }) {
         if (generation.current === gen && !background) setLoading(false);
       }
     },
-    [view, date, page, search, filter, archived],
+    [view, date, page, search, filter, archived, isAdmin],
   );
   useEffect(() => {
     const id = setTimeout(() => void load(), search ? 450 : 0);
