@@ -29,9 +29,9 @@ export default function Workspace({ user }: { user: User }) {
   const [workerRole, setWorkerRole] = useState('CTV');
   const [editingWorkerId, setEditingWorkerId] = useState('');
   const [editingPlatformId, setEditingPlatformId] = useState(''), [platformDraft, setPlatformDraft] = useState('');
-  const requestRef = useRef<{ body: string; id: string } | null>(null), generation = useRef(0);
-  const load = useCallback(async () => {
-    const gen = ++generation.current; setLoading(true);
+  const requestRef = useRef<{ body: string; id: string } | null>(null), generation = useRef(0), mutationQueue = useRef(Promise.resolve());
+  const load = useCallback(async (background = false) => {
+    const gen = ++generation.current; if (!background) setLoading(true);
     try {
       const q = new URLSearchParams({ view, date, page: String(page), search, archived: String(archived), [view === 'settlements' ? 'workerId' : 'ownerId']: filter });
       const r = await fetch(`/api/workspace?${q}`, { cache: 'no-store' });
@@ -39,11 +39,12 @@ export default function Workspace({ user }: { user: User }) {
       const result = await r.json(); if (!r.ok) throw new Error(result.error);
       if (generation.current === gen) { setData(result); setError(''); }
     } catch (err) { if (generation.current === gen) setError((err as Error).message); }
-    finally { if (generation.current === gen) setLoading(false); }
+    finally { if (generation.current === gen && !background) setLoading(false); }
   }, [view, date, page, search, filter, archived]);
-  useEffect(() => { const id = setTimeout(() => void load(), search ? 250 : 0); return () => clearTimeout(id); }, [load, search]);
+  useEffect(() => { const id = setTimeout(() => void load(), search ? 450 : 0); return () => clearTimeout(id); }, [load, search]);
+  useEffect(() => { const id = setInterval(() => { if (!busy) void load(true); }, 20000); return () => clearInterval(id); }, [busy, load]);
   useEffect(() => { setSelected([]); }, [view, date, page, search, filter, archived]);
-  async function mutation(command: Record<string, unknown>, message: string, keepOpen = false) {
+  async function performMutation(command: Record<string, unknown>, message: string, keepOpen = false) {
     setBusy(true); setError(''); setNotice('');
     const body = JSON.stringify(command);
     if (!requestRef.current || requestRef.current.body !== body) requestRef.current = { body, id: crypto.randomUUID() };
@@ -51,9 +52,14 @@ export default function Workspace({ user }: { user: User }) {
       const r = await fetch('/api/workspace', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': requestRef.current.id }, body });
       const result = await r.json();
       if (!r.ok) { if (r.status < 500) requestRef.current = null; throw new Error(result.error); }
-      requestRef.current = null; setNotice(message); setSelected([]); if (!keepOpen) setModal(null); await load(); return true;
+      requestRef.current = null; setNotice(message); setSelected([]); if (!keepOpen) setModal(null); void load(true); return true;
     } catch (err) { setError((err as Error).message); return false; }
     finally { setBusy(false); }
+  }
+  function mutation(command: Record<string, unknown>, message: string, keepOpen = false) {
+    const run = mutationQueue.current.then(() => performMutation(command, message, keepOpen));
+    mutationQueue.current = run.then(() => undefined, () => undefined);
+    return run;
   }
   async function openKey(id: string, mode: Modal = 'detail') {
     setError('');
@@ -104,4 +110,5 @@ export default function Workspace({ user }: { user: User }) {
     </Dialog>}
   </div>;
 }
+
 
