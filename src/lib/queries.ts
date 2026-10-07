@@ -40,6 +40,7 @@ export async function snapshot(actor: Actor, params: URLSearchParams) {
       ...(actor.role === 'ADMIN' ? (params.get('ownerId') ? { ownerId: params.get('ownerId') === 'unassigned' ? null : params.get('ownerId')! } : {}) : { ownerId: actor.id }),
       ...(view === 'today' ? { entries: { some: { date, visible: true } } } : view === 'summary' ? { usages: { some: { settlement: { date, workerId: actor.id }, status: { not: 'CANCELLED' } } } } : { archived: params.get('archived') === 'true' }),
       ...(search ? { OR: [{ fullName: { contains: search, mode: 'insensitive' } }, { normalizedStk: { contains: search.replace(/\s/g, '') } }, { bank: { contains: search, mode: 'insensitive' } }] } : {}),
+      ...(params.get('dataType') ? { dataType: params.get('dataType') as 'REAL' | 'VIRTUAL' } : {}),
     };
     if (params.get('selection') === 'true') {
       const matches = await tx.key.findMany({ where, select: { id: true }, take: 5001 });
@@ -50,31 +51,33 @@ export async function snapshot(actor: Actor, params: URLSearchParams) {
     const usageWhere: Prisma.UsageWhereInput = { status: { not: 'CANCELLED' }, ...(['today', 'summary'].includes(view) ? { settlement: { date, workerId: actor.id } } : {}) };
     if (scope === 'table') {
       const [keys, total] = await Promise.all([
-        tx.key.findMany({ where, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], skip: (page - 1) * pageSize, take: pageSize, select: { id: true, fullName: true, normalizedStk: true, bank: true, archived: true, owner: { select: { id: true, name: true, role: true } }, usages: { where: usageWhere, select: { id: true, platformId: true, deposit: true, withdrawal: true, status: true, settlement: { select: { date: true, status: true } } } } } }),
+        tx.key.findMany({ where, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], skip: (page - 1) * pageSize, take: pageSize, select: { id: true, fullName: true, normalizedStk: true, bank: true, archived: true, dataType: true, owner: { select: { id: true, name: true, role: true } }, usages: { where: usageWhere, select: { id: true, platformId: true, deposit: true, withdrawal: true, status: true, settlement: { select: { date: true, status: true } } } } } }),
         tx.key.count({ where }),
       ]);
       const rows = keys.map(k => ({ ...k, depositTotal: k.usages.reduce((n, u) => n.plus(u.deposit), decimal(0)), withdrawalTotal: k.usages.reduce((n, u) => n.plus(u.withdrawal), decimal(0)) }));
       return { view, date, page, pageSize, total, platforms, workers, keys: rows };
     }
     if (scope === 'meta') {
-      const [keyCount, used, settlement, totals] = await Promise.all([
-        tx.key.count({ where: { ownerId: actor.id, archived: false } }),
-        tx.usage.groupBy({ by: ['platformId'], where: { key: { ownerId: actor.id, archived: false }, status: { not: 'CANCELLED' } }, _count: true }),
+      const [realCount, virtualUnused, used, settlement, totals] = await Promise.all([
+        tx.key.count({ where: { ownerId: actor.id, archived: false, dataType: 'REAL' } }),
+        tx.key.count({ where: { ownerId: actor.id, archived: false, dataType: 'VIRTUAL', usages: { none: { status: { not: 'CANCELLED' } } } } }),
+        tx.usage.groupBy({ by: ['platformId'], where: { key: { ownerId: actor.id, archived: false, dataType: 'REAL' }, status: { not: 'CANCELLED' } }, _count: true }),
         tx.settlement.findUnique({ where: { workerId_date: { workerId: actor.id, date } } }),
         calculate(tx, actor.id, date),
       ]);
-      const eligible = Object.fromEntries(platforms.filter(p => p.active).map(p => [p.id, keyCount - (used.find(u => u.platformId === p.id)?._count ?? 0)]));
+      const eligible = Object.fromEntries(platforms.filter(p => p.active).map(p => [p.id, realCount - (used.find(u => u.platformId === p.id)?._count ?? 0) + virtualUnused]));
       return { eligible, settlement, totals: settlement && settlement.status !== 'OPEN' ? { deposit: settlement.deposit, withdrawal: settlement.withdrawal, fee: settlement.fee, profit: settlement.profit, payout: settlement.payout, parentCommission: settlement.parentCommission, childCommission: settlement.childCommission, adminShare: settlement.adminShare, incomplete: 0 } : totals };
     }
-    const [keys, total, keyCount, used, settlement, totals] = await Promise.all([
-      tx.key.findMany({ where, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], skip: (page - 1) * pageSize, take: pageSize, select: { id: true, fullName: true, normalizedStk: true, bank: true, archived: true, owner: { select: { id: true, name: true, role: true } }, usages: { where: { status: { not: 'CANCELLED' } }, select: { id: true, platformId: true, deposit: true, withdrawal: true, status: true, settlement: { select: { date: true, status: true } } } } } }),
+    const [keys, total, realCount, virtualUnused, used, settlement, totals] = await Promise.all([
+      tx.key.findMany({ where, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], skip: (page - 1) * pageSize, take: pageSize, select: { id: true, fullName: true, normalizedStk: true, bank: true, archived: true, dataType: true, owner: { select: { id: true, name: true, role: true } }, usages: { where: { status: { not: 'CANCELLED' } }, select: { id: true, platformId: true, deposit: true, withdrawal: true, status: true, settlement: { select: { date: true, status: true } } } } } }),
       tx.key.count({ where }),
-      actor.role !== 'ADMIN' ? tx.key.count({ where: { ownerId: actor.id, archived: false } }) : Promise.resolve(0),
-      actor.role !== 'ADMIN' ? tx.usage.groupBy({ by: ['platformId'], where: { key: { ownerId: actor.id, archived: false }, status: { not: 'CANCELLED' } }, _count: true }) : Promise.resolve([]),
+      actor.role !== 'ADMIN' ? tx.key.count({ where: { ownerId: actor.id, archived: false, dataType: 'REAL' } }) : Promise.resolve(0),
+      actor.role !== 'ADMIN' ? tx.key.count({ where: { ownerId: actor.id, archived: false, dataType: 'VIRTUAL', usages: { none: { status: { not: 'CANCELLED' } } } } }) : Promise.resolve(0),
+      actor.role !== 'ADMIN' ? tx.usage.groupBy({ by: ['platformId'], where: { key: { ownerId: actor.id, archived: false, dataType: 'REAL' }, status: { not: 'CANCELLED' } }, _count: true }) : Promise.resolve([]),
       actor.role !== 'ADMIN' ? tx.settlement.findUnique({ where: { workerId_date: { workerId: actor.id, date } } }) : Promise.resolve(null),
       actor.role !== 'ADMIN' ? calculate(tx, actor.id, date) : Promise.resolve(null),
     ]);
-    const eligible = Object.fromEntries(platforms.filter(p => p.active).map(p => [p.id, keyCount - (used.find(u => u.platformId === p.id)?._count ?? 0)]));
+    const eligible = Object.fromEntries(platforms.filter(p => p.active).map(p => [p.id, realCount - (used.find(u => u.platformId === p.id)?._count ?? 0) + virtualUnused]));
     const rows = keys.map(k => ({ ...k, depositTotal: k.usages.filter(u => u.settlement.date === date).reduce((n, u) => n.plus(u.deposit), decimal(0)), withdrawalTotal: k.usages.filter(u => u.settlement.date === date).reduce((n, u) => n.plus(u.withdrawal), decimal(0)) }));
     return { view, date, page, pageSize, total, platforms, workers, keys: rows, eligible, settlement, totals: settlement && settlement.status !== 'OPEN' ? { deposit: settlement.deposit, withdrawal: settlement.withdrawal, fee: settlement.fee, profit: settlement.profit, payout: settlement.payout, parentCommission: settlement.parentCommission, childCommission: settlement.childCommission, adminShare: settlement.adminShare, incomplete: 0 } : totals };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 30_000 });

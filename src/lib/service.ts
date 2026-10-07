@@ -9,7 +9,7 @@ const idsSchema = z.array(z.string().min(1).max(100)).min(1).max(5000).transform
 const base = z.object({ date: dateSchema });
 export const commandSchema = z.discriminatedUnion('action', [
   base.extend({ action: z.literal('start'), platformId: z.string(), count: z.number().int().min(1).max(500), deposit: amountSchema, data: z.string().max(200_000).default('') }),
-  z.object({ action: z.literal('import'), data: z.string().max(200_000), ownerId: z.string().nullable().optional() }),
+  z.object({ action: z.literal('import'), data: z.string().max(200_000), ownerId: z.string().nullable().optional(), dataType: z.enum(['REAL', 'VIRTUAL']).default('REAL') }),
   z.object({ action: z.literal('assign'), ids: idsSchema, ownerId: z.string() }),
   z.object({ action: z.literal('withdraw'), usageId: z.string(), withdrawal: amountSchema }),
   base.extend({ action: z.literal('removeToday'), ids: idsSchema }),
@@ -41,7 +41,7 @@ async function checkDay(tx: Tx, workerId: string, date: string) {
   }
   return user;
 }
-async function importKeys(tx: Tx, actor: Actor, text: string, ownerId: string | null, today: boolean) {
+async function importKeys(tx: Tx, actor: Actor, text: string, ownerId: string | null, today: boolean, dataType: 'REAL' | 'VIRTUAL' = 'REAL') {
   const data = parseData(text);
   if (ownerId) await checkDay(tx, ownerId, day());
   const accounts = data.map(d => d.normalizedStk);
@@ -52,7 +52,7 @@ async function importKeys(tx: Tx, actor: Actor, text: string, ownerId: string | 
   }
   const found = new Set(existing.map(k => k.normalizedStk));
   const fresh = data.filter(d => !found.has(d.normalizedStk));
-  if (fresh.length) await tx.key.createMany({ data: fresh.map(d => ({ ...d, id: randomUUID(), password: encrypt(d.password), pin: encrypt(d.pin), ownerId })) });
+  if (fresh.length) await tx.key.createMany({ data: fresh.map(d => ({ ...d, id: randomUUID(), password: encrypt(d.password), pin: encrypt(d.pin), ownerId, dataType })) });
   if (ownerId) await tx.key.updateMany({ where: { normalizedStk: { in: accounts }, ownerId: null }, data: { ownerId } });
   const keys = await tx.key.findMany({ where: { normalizedStk: { in: accounts } }, select: { id: true } });
   if (today && ownerId) {
@@ -99,7 +99,10 @@ async function execute(tx: Tx, actor: Actor, cmd: Command): Promise<Prisma.Input
       ensure(platform?.active, 'Platform không khả dụng');
       let imported = { created: 0, reused: 0 };
       if (cmd.data.trim()) imported = await importKeys(tx, actor, cmd.data, actor.id, false);
-      const keys = await tx.key.findMany({ where: { ownerId: actor.id, archived: false, usages: { none: { platformId: cmd.platformId, status: { not: 'CANCELLED' } } } }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: cmd.count, select: { id: true } });
+      const keys = await tx.key.findMany({ where: { ownerId: actor.id, archived: false, OR: [
+        { dataType: 'REAL', usages: { none: { platformId: cmd.platformId, status: { not: 'CANCELLED' } } } },
+        { dataType: 'VIRTUAL', usages: { none: { status: { not: 'CANCELLED' } } } },
+      ] }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: cmd.count, select: { id: true } });
       ensure(keys.length === cmd.count, `Key có sẵn: ${keys.length}. Thiếu: ${cmd.count - keys.length}. Dán thêm Data.`, 409);
       const settlement = await tx.settlement.upsert({ where: { workerId_date: { workerId: actor.id, date: cmd.date } }, create: { workerId: actor.id, date: cmd.date }, update: {} });
       if (actor.parentCtvId) await tx.settlement.upsert({ where: { workerId_date: { workerId: actor.parentCtvId, date: cmd.date } }, create: { workerId: actor.parentCtvId, date: cmd.date }, update: {} });
@@ -116,7 +119,7 @@ async function execute(tx: Tx, actor: Actor, cmd: Command): Promise<Prisma.Input
     }
     case 'import': {
       if (actor.role !== 'ADMIN') ensure(!cmd.ownerId || cmd.ownerId === actor.id, 'Không được giao Data cho người khác', 403);
-      return importKeys(tx, actor, cmd.data, actor.role === 'ADMIN' ? cmd.ownerId ?? null : actor.id, actor.role === 'ADMIN');
+      return importKeys(tx, actor, cmd.data, actor.role === 'ADMIN' ? cmd.ownerId ?? null : actor.id, actor.role === 'ADMIN', cmd.dataType);
     }
     case 'assign': {
       admin(actor);
@@ -132,11 +135,12 @@ async function execute(tx: Tx, actor: Actor, cmd: Command): Promise<Prisma.Input
     }
     case 'withdraw': {
       worker(actor);
-      const usage = await tx.usage.findUnique({ where: { id: cmd.usageId }, include: { settlement: true } });
+      const usage = await tx.usage.findUnique({ where: { id: cmd.usageId }, include: { settlement: true, key: { select: { dataType: true } } } });
       ensure(usage && usage.settlement.workerId === actor.id, 'Không có quyền với lượt chạy này', 403);
       await checkDay(tx, actor.id, usage.settlement.date);
       ensure(usage.status !== 'CANCELLED', 'Lượt chạy đã hủy', 409);
       await tx.usage.update({ where: { id: usage.id }, data: { withdrawal: cmd.withdrawal, status: 'DONE', completedAt: new Date() } });
+      if (usage.key.dataType === 'VIRTUAL') await tx.key.update({ where: { id: usage.keyId }, data: { archived: true } });
       await audit(tx, actor, 'WITHDRAWAL', usage.id, { before: usage.withdrawal.toString(), after: cmd.withdrawal });
       return { done: true };
     }

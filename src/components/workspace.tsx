@@ -26,6 +26,7 @@ type KeyRow = {
   normalizedStk: string;
   bank: string;
   archived: boolean;
+  dataType: "REAL" | "VIRTUAL";
   owner: { id: string; name: string; role: string } | null;
   usages: Usage[];
 };
@@ -126,6 +127,7 @@ export default function Workspace({ user }: { user: User }) {
     [page, setPage] = useState(1),
     [search, setSearch] = useState(""),
     [filter, setFilter] = useState(""),
+    [dataTypeFilter, setDataTypeFilter] = useState(""),
     [archived, setArchived] = useState(false);
   const [data, setData] = useState<Snapshot | null>(null),
     [loading, setLoading] = useState(true),
@@ -143,6 +145,7 @@ export default function Workspace({ user }: { user: User }) {
     [depositMode, setDepositMode] = useState("100"),
     [deposit, setDeposit] = useState("100"),
     [paste, setPaste] = useState(""),
+    [importDataType, setImportDataType] = useState<"REAL" | "VIRTUAL">("REAL"),
     [ownerId, setOwnerId] = useState(""),
     [withdrawals, setWithdrawals] = useState<Record<string, string>>({});
   const [workerRole, setWorkerRole] = useState("CTV");
@@ -167,6 +170,7 @@ export default function Workspace({ user }: { user: User }) {
           date,
           page: String(page),
           search,
+          dataType: dataTypeFilter,
           archived: String(archived),
           [view === "settlements" ? "workerId" : "ownerId"]: filter,
         });
@@ -196,7 +200,7 @@ export default function Workspace({ user }: { user: User }) {
         if (generation.current === gen && !background) setLoading(false);
       }
     },
-    [view, date, page, search, filter, archived, isAdmin],
+    [view, date, page, search, filter, dataTypeFilter, archived, isAdmin],
   );
   useEffect(() => {
     const id = setTimeout(() => void load(), search ? 450 : 0);
@@ -210,7 +214,7 @@ export default function Workspace({ user }: { user: User }) {
   }, [busy, load]);
   useEffect(() => {
     setSelected([]);
-  }, [view, date, page, search, filter, archived]);
+  }, [view, date, page, search, filter, dataTypeFilter, archived]);
   useEffect(() => {
     if (!isAdmin) return;
     void fetch("/api/admin/backup/google-sheets", { cache: "no-store" })
@@ -276,6 +280,7 @@ export default function Workspace({ user }: { user: User }) {
           action: "import",
           data: batches[i],
           ...(isAdmin ? { ownerId: assignedOwner } : {}),
+          dataType: importDataType,
         },
         `Đã nhập batch ${i + 1}/${batches.length}`,
         true,
@@ -347,6 +352,7 @@ export default function Workspace({ user }: { user: User }) {
     setPage(1);
     setSearch("");
     setFilter("");
+    setDataTypeFilter("");
     setArchived(false);
     setData(null);
     setNotice("");
@@ -354,6 +360,7 @@ export default function Workspace({ user }: { user: User }) {
   function open(next: Modal) {
     setPaste("");
     setOwnerId("");
+    setImportDataType("REAL");
     setError("");
     setEditingPlatformId("");
     setEditingWorkerId("");
@@ -583,6 +590,13 @@ export default function Workspace({ user }: { user: User }) {
                     ))}
                   </select>
                 )}
+                {view === "data" && (
+                  <select aria-label="Lọc loại Data" value={dataTypeFilter} onChange={(e) => { setDataTypeFilter(e.target.value); setPage(1); }}>
+                    <option value="">Tất cả loại Data</option>
+                    <option value="REAL">Data thật · dùng lâu dài</option>
+                    <option value="VIRTUAL">Data ảo · dùng một lần</option>
+                  </select>
+                )}
                 {["inventory", "data"].includes(view) && (
                   <label className="check-label">
                     <input
@@ -627,6 +641,7 @@ export default function Workspace({ user }: { user: User }) {
                         view,
                         date,
                         search,
+                        dataType: dataTypeFilter,
                         archived: String(archived),
                         ownerId: filter,
                         selection: "true",
@@ -773,7 +788,9 @@ export default function Workspace({ user }: { user: User }) {
                           done = usages.filter((u) => u.status === "DONE").length;
                         const completed = k.usages.filter((u) => u.status === "DONE"),
                           active = k.usages.filter((u) => u.status === "ACTIVE"),
-                          eligible = data?.platforms.filter((p) => !k.usages.some((u) => u.platformId === p.id)) ?? [];
+                          eligible = k.dataType === "VIRTUAL"
+                            ? (k.usages.some((u) => u.status !== "CANCELLED") ? [] : data?.platforms.filter((p) => p.active) ?? [])
+                            : data?.platforms.filter((p) => p.active && !k.usages.some((u) => u.platformId === p.id && u.status !== "CANCELLED")) ?? [];
                         const names = (list: Usage[]) => list.map((u) => data?.platforms.find((p) => p.id === u.platformId)?.name ?? "Platform").join(", ");
                         return (
                           <tr key={k.id} className={selected.includes(k.id) ? "selected" : ""}>
@@ -788,6 +805,8 @@ export default function Workspace({ user }: { user: User }) {
                                 {k.normalizedStk}
                                 <span className="separator">·</span>
                                 {k.bank}
+                                <span className="separator">·</span>
+                                {k.dataType === "REAL" ? "Data thật" : "Data ảo"}
                               </small>
                             </td>
                             {view === "inventory" ? (
@@ -1085,17 +1104,26 @@ export default function Workspace({ user }: { user: User }) {
             >
               <div className="dialog-body">
                 {isAdmin && (
-                  <label>
-                    Giao trực tiếp
-                    <select value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
-                      <option value="">Chưa giao</option>
-                      {data?.workers.map((w) => (
-                        <option key={w.id} value={w.id}>
-                          {w.name} · {w.role}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <>
+                    <label>
+                      Loại Data
+                      <select aria-label="Loại Data" value={importDataType} onChange={(e) => setImportDataType(e.target.value as "REAL" | "VIRTUAL")}>
+                        <option value="REAL">Data thật · dùng cho tương lai</option>
+                        <option value="VIRTUAL">Data ảo · dùng một lần rồi lưu trữ</option>
+                      </select>
+                    </label>
+                    <label>
+                      Giao trực tiếp
+                      <select value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
+                        <option value="">Chưa giao</option>
+                        {data?.workers.map((w) => (
+                          <option key={w.id} value={w.id}>
+                            {w.name} · {w.role}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </>
                 )}
                 <label>
                   Data / Key

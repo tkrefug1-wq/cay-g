@@ -53,7 +53,7 @@ export async function backupToGoogleSheets() {
   const { account, spreadsheetId } = config();
   const revision = new Date().toISOString();
   const [keys, usages, settlements, users] = await Promise.all([
-    db.key.findMany({ select: { id: true, fullName: true, normalizedStk: true, bank: true, archived: true, owner: { select: { name: true } } }, orderBy: { createdAt: "asc" } }),
+    db.key.findMany({ select: { id: true, fullName: true, normalizedStk: true, bank: true, archived: true, dataType: true, owner: { select: { name: true } } }, orderBy: { createdAt: "asc" } }),
     db.usage.findMany({ select: { id: true, keyId: true, deposit: true, withdrawal: true, status: true, platform: { select: { name: true } }, settlement: { select: { date: true } } }, orderBy: { createdAt: "asc" } }),
     db.settlement.findMany({ select: { id: true, deposit: true, withdrawal: true, fee: true, profit: true, payout: true, status: true, worker: { select: { name: true } } }, orderBy: [{ date: "asc" }, { workerId: "asc" }] }),
     db.user.findMany({ select: { id: true, name: true, email: true, role: true, active: true, parent: { select: { name: true } } }, orderBy: { createdAt: "asc" } }),
@@ -61,7 +61,7 @@ export async function backupToGoogleSheets() {
   const token = await accessToken(account);
   await ensureSheets(spreadsheetId, token);
   const tables = {
-    KEYS: [["key_id", "họ tên", "STK", "ngân hàng", "chủ sở hữu", "trạng thái"], ...keys.map(key => [key.id, key.fullName, key.normalizedStk, key.bank, key.owner?.name ?? "", key.archived ? "ARCHIVED" : "ACTIVE"])],
+    KEYS: [["key_id", "họ tên", "STK", "ngân hàng", "loại Data", "chủ sở hữu", "trạng thái"], ...keys.map(key => [key.id, key.fullName, key.normalizedStk, key.bank, key.dataType, key.owner?.name ?? "", key.archived ? "ARCHIVED" : "ACTIVE"])],
     USAGES: [["usage_id", "key_id", "Platform", "nạp", "rút", "trạng thái", "ngày"], ...usages.map(usage => [usage.id, usage.keyId, usage.platform.name, usage.deposit.toString(), usage.withdrawal.toString(), usage.status, usage.settlement.date])],
     SETTLEMENTS: [["settlement_id", "người nhận", "nạp", "rút", "phí", "lợi nhuận", "payout", "trạng thái"], ...settlements.map(row => [row.id, row.worker.name, row.deposit.toString(), row.withdrawal.toString(), row.fee.toString(), row.profit.toString(), row.payout.toString(), row.status])],
     USERS: [["user_id", "họ tên", "email", "vai trò", "CTV cha", "hoạt động"], ...users.map(row => [row.id, row.name, row.email, row.role, row.parent?.name ?? "", row.active])],
