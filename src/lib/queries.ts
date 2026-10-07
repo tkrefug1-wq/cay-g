@@ -60,7 +60,7 @@ export async function snapshot(actor: Actor, params: URLSearchParams) {
   }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 30_000 });
 }
 export async function keyDetail(actor: Actor, id: string) {
-  const key = await db.key.findUnique({ where: { id }, include: { usages: { include: { platform: true, settlement: { select: { date: true, status: true } } }, orderBy: { createdAt: 'desc' } } } });
+  const key = await db.key.findUnique({ where: { id }, select: { id: true, ownerId: true, archived: true, fullName: true, normalizedStk: true, bank: true, branch: true, account: true, password: true, pin: true, phone: true, email: true, birthDate: true, usages: { select: { id: true, platformId: true, deposit: true, withdrawal: true, status: true, platform: { select: { id: true, name: true, active: true } }, settlement: { select: { date: true, status: true } } }, orderBy: { createdAt: 'desc' } } } });
   ensure(key && (actor.role === 'ADMIN' || key.ownerId === actor.id), 'Không có quyền xem Key', 403);
   const fields = [key.fullName, key.normalizedStk, key.bank, key.branch, key.account, decrypt(key.password), decrypt(key.pin), key.phone, key.email, key.birthDate];
   return { id: key.id, fields, archived: key.archived, usages: key.usages };

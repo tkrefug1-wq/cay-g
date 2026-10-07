@@ -136,6 +136,7 @@ export default function Workspace({ user }: { user: User }) {
   const [selected, setSelected] = useState<string[]>([]),
     [modal, setModal] = useState<Modal>(null),
     [detail, setDetail] = useState<Detail | null>(null),
+    [detailLoading, setDetailLoading] = useState(false),
     [fields, setFields] = useState<string[]>([]);
   const [platformId, setPlatformId] = useState(""),
     [count, setCount] = useState(1),
@@ -287,6 +288,9 @@ export default function Workspace({ user }: { user: User }) {
   );
   async function openKey(id: string, mode: Modal = "detail") {
     setError("");
+    setDetail(null);
+    setDetailLoading(true);
+    setModal(mode);
     try {
       const r = await fetch(`/api/keys/${id}`, { cache: "no-store" });
       const result = await r.json();
@@ -294,9 +298,10 @@ export default function Workspace({ user }: { user: User }) {
       setDetail(result);
       setFields(result.fields);
       setWithdrawals(Object.fromEntries(result.usages.map((u: Usage) => [u.id, u.withdrawal])));
-      setModal(mode);
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setDetailLoading(false);
     }
   }
   function switchView(next: string) {
@@ -1099,6 +1104,7 @@ export default function Workspace({ user }: { user: User }) {
               </div>
             </form>
           )}
+          {detailLoading && (modal === "detail" || modal === "edit") && <div className="dialog-body compact-empty muted">Đang tải Data / Key…</div>}
           {modal === "detail" && detail && (
             <>
               <div className="dialog-body">
