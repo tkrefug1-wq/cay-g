@@ -72,6 +72,8 @@ model Key {
   entries TodayEntry[]
   createdAt DateTime @default(now())
   @@index([ownerId, archived, createdAt])
+  @@index([fullName])
+  @@index([bank])
 }
 model Platform {
   id String @id @default(cuid())
@@ -113,6 +115,8 @@ model Usage {
   completedAt DateTime?
   createdAt DateTime @default(now())
   @@unique([keyId, platformId])
+  @@index([keyId, status])
+  @@index([platformId, status])
   @@index([settlementId, status])
 }
 model TodayEntry {

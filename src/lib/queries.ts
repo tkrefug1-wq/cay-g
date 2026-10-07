@@ -57,7 +57,7 @@ export async function snapshot(actor: Actor, params: URLSearchParams) {
     const eligible = Object.fromEntries(platforms.filter(p => p.active).map(p => [p.id, keyCount - (used.find(u => u.platformId === p.id)?._count ?? 0)]));
     const rows = keys.map(k => ({ ...k, depositTotal: k.usages.filter(u => u.settlement.date === date).reduce((n, u) => n.plus(u.deposit), decimal(0)), withdrawalTotal: k.usages.filter(u => u.settlement.date === date).reduce((n, u) => n.plus(u.withdrawal), decimal(0)) }));
     return { view, date, page, pageSize, total, platforms, workers, keys: rows, eligible, settlement, totals: settlement && settlement.status !== 'OPEN' ? { deposit: settlement.deposit, withdrawal: settlement.withdrawal, fee: settlement.fee, profit: settlement.profit, payout: settlement.payout, parentCommission: settlement.parentCommission, childCommission: settlement.childCommission, adminShare: settlement.adminShare, incomplete: 0 } : totals };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 30_000 });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 30_000 });
 }
 export async function keyDetail(actor: Actor, id: string) {
   const key = await db.key.findUnique({ where: { id }, include: { usages: { include: { platform: true, settlement: { select: { date: true, status: true } } }, orderBy: { createdAt: 'desc' } } } });
