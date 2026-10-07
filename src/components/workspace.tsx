@@ -1264,9 +1264,25 @@ export default function Workspace({ user }: { user: User }) {
                       />
                       <Badge status={u.status} />
                       {!isAdmin && u.settlement.status === "OPEN" && u.status !== "CANCELLED" ? (
-                        <button className="primary compact" disabled={busy}>
-                          {u.status === "DONE" ? "Lưu" : "Hoàn thành"}
-                        </button>
+                        <div className="usage-actions">
+                          <button className="primary compact" disabled={busy}>
+                            {u.status === "DONE" ? "Lưu" : "Hoàn thành"}
+                          </button>
+                          <button
+                            type="button"
+                            className="danger-text compact"
+                            disabled={busy}
+                            onClick={async () => {
+                              if (!confirm(`Hủy lượt chạy ${u.platform?.name}? Nạp/Rút của lượt này sẽ bị loại khỏi Tổng kết.`)) return;
+                              if (await mutation({ action: "cancelUsage", usageId: u.id }, "Đã hủy lượt chạy", true)) {
+                                detailCache.current.delete(detail.id);
+                                await openKey(detail.id);
+                              }
+                            }}
+                          >
+                            Hủy lượt
+                          </button>
+                        </div>
                       ) : (
                         <LockKeyhole size={16} />
                       )}

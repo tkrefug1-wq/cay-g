@@ -80,9 +80,17 @@ test('withdrawal can change after DONE before CLOSED, including zero', async () 
   await importData(); await start(); await finish(); await finish(ctv, '0');
   assert.equal((await usage()).withdrawal.toString(), '0'); assert.equal((await usage()).status, 'DONE');
 });
+test('worker can cancel a usage before CLOSED and totals exclude it', async () => {
+  await importData(); await start(); await finish();
+  const current = await usage(); await call(ctv, { action: 'cancelUsage', usageId: current.id });
+  const totals = await calculate(db, ctv.id, day());
+  assert.equal(totals.deposit.toString(), '0'); assert.equal(totals.withdrawal.toString(), '0');
+  assert.equal((await db.usage.findUniqueOrThrow({ where: { id: current.id } })).status, 'CANCELLED');
+});
 test('CLOSED blocks worker edits and PostgreSQL direct edits', async () => {
   await importData(); await start(); await finish(); await call(ctv, { action: 'close', date: day() });
   await assert.rejects(finish(), /CLOSED/); await assert.rejects(start(), /CLOSED/);
+  await assert.rejects(call(ctv, { action: 'cancelUsage', usageId: (await usage()).id }), /CLOSED/);
   await assert.rejects(db.usage.update({ where: { id: (await usage()).id }, data: { withdrawal: 999 } }));
   const key = await db.key.findFirstOrThrow();
   await assert.rejects(call(ctv, { action: 'editKey', id: key.id, data: `New|${key.normalizedStk}|VCB|||||||` }), /khóa sửa/);

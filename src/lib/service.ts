@@ -12,6 +12,7 @@ export const commandSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('import'), data: z.string().max(200_000), ownerId: z.string().nullable().optional(), dataType: z.enum(['REAL', 'VIRTUAL']).default('REAL') }),
   z.object({ action: z.literal('assign'), ids: idsSchema, ownerId: z.string() }),
   z.object({ action: z.literal('withdraw'), usageId: z.string(), withdrawal: amountSchema }),
+  z.object({ action: z.literal('cancelUsage'), usageId: z.string() }),
   base.extend({ action: z.literal('removeToday'), ids: idsSchema }),
   z.object({ action: z.literal('deleteKeys'), ids: idsSchema }),
   z.object({ action: z.literal('editKey'), id: z.string(), data: z.string().max(3000) }),
@@ -150,6 +151,16 @@ async function execute(tx: Tx, actor: Actor, cmd: Command): Promise<Prisma.Input
       if (usage.key.dataType === 'VIRTUAL') await tx.key.update({ where: { id: usage.keyId }, data: { archived: true } });
       await audit(tx, actor, 'WITHDRAWAL', usage.id, { before: usage.withdrawal.toString(), after: cmd.withdrawal });
       return { done: true };
+    }
+    case 'cancelUsage': {
+      worker(actor);
+      const usage = await tx.usage.findUnique({ where: { id: cmd.usageId }, include: { settlement: true } });
+      ensure(usage && usage.settlement.workerId === actor.id, 'Không có quyền với lượt chạy này', 403);
+      await checkDay(tx, actor.id, usage.settlement.date);
+      ensure(usage.status !== 'CANCELLED', 'Lượt chạy đã được hủy', 409);
+      await tx.usage.update({ where: { id: usage.id }, data: { status: 'CANCELLED', withdrawal: 0, completedAt: null } });
+      await audit(tx, actor, 'CANCEL_USAGE', usage.id, { platformId: usage.platformId, deposit: usage.deposit.toString(), withdrawal: usage.withdrawal.toString() });
+      return { cancelled: true };
     }
     case 'removeToday': {
       worker(actor);

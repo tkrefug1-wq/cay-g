@@ -823,6 +823,11 @@ dialog::backdrop {
 .withdraw-row input {
   width: 100%;
 }
+.usage-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
 .compact {
   padding: 7px 9px;
   font-size: 11px;
