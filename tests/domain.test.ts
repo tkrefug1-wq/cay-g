@@ -68,8 +68,8 @@ test('new Platform immediately makes old Key eligible', async () => {
   await start(ctv, 1, result.id); assert.equal(await db.key.count(), 1);
 });
 test('virtual Data is used once then archived; real Data remains reusable', async () => {
-  await call(admin, { action: 'import', data: 'Virtual|777001|VCB', ownerId: ctv.id, dataType: 'VIRTUAL' });
-  await start(); await finish();
+  await start(ctv, 1, platform, { dataType: 'VIRTUAL', data: 'Virtual|777001|VCB\nExtra|777002|VCB' });
+  assert.equal(await db.key.count(), 1); await finish();
   const virtual = await db.key.findFirstOrThrow({ where: { normalizedStk: '777001' } });
   assert.equal(virtual.dataType, 'VIRTUAL'); assert.equal(virtual.archived, true);
   await assert.rejects(start(ctv, 1, platformB), /Thiếu: 1/);

@@ -141,11 +141,11 @@ export default function Workspace({ user }: { user: User }) {
     [detailLoading, setDetailLoading] = useState(false),
     [fields, setFields] = useState<string[]>([]);
   const [platformId, setPlatformId] = useState(""),
+    [startDataType, setStartDataType] = useState<"REAL" | "VIRTUAL">("REAL"),
     [count, setCount] = useState(1),
     [depositMode, setDepositMode] = useState("100"),
     [deposit, setDeposit] = useState("100"),
     [paste, setPaste] = useState(""),
-    [importDataType, setImportDataType] = useState<"REAL" | "VIRTUAL">("REAL"),
     [ownerId, setOwnerId] = useState(""),
     [withdrawals, setWithdrawals] = useState<Record<string, string>>({});
   const [workerRole, setWorkerRole] = useState("CTV");
@@ -280,7 +280,7 @@ export default function Workspace({ user }: { user: User }) {
           action: "import",
           data: batches[i],
           ...(isAdmin ? { ownerId: assignedOwner } : {}),
-          dataType: importDataType,
+          dataType: "REAL",
         },
         `Đã nhập batch ${i + 1}/${batches.length}`,
         true,
@@ -360,7 +360,7 @@ export default function Workspace({ user }: { user: User }) {
   function open(next: Modal) {
     setPaste("");
     setOwnerId("");
-    setImportDataType("REAL");
+    setStartDataType("REAL");
     setError("");
     setEditingPlatformId("");
     setEditingWorkerId("");
@@ -379,7 +379,7 @@ export default function Workspace({ user }: { user: User }) {
   }
   const locked = data?.settlement && data.settlement.status !== "OPEN";
   const activePlatforms = data?.platforms.filter((p) => p.active) ?? [];
-  const available = data?.eligible?.[platformId] ?? 0,
+  const available = startDataType === "VIRTUAL" ? 0 : data?.eligible?.[platformId] ?? 0,
     shortage = Math.max(0, count - available);
   const keys = data?.keys ?? [],
     allSelected = keys.length > 0 && keys.every((k) => selected.includes(k.id));
@@ -1030,6 +1030,7 @@ export default function Workspace({ user }: { user: User }) {
                     count,
                     deposit,
                     data: paste,
+                    dataType: startDataType,
                   },
                   `Đã bắt đầu ${count} Key`,
                 );
@@ -1049,6 +1050,13 @@ export default function Workspace({ user }: { user: User }) {
                 <label>
                   Số Key
                   <input type="number" min="1" max="500" required value={count} onChange={(e) => setCount(Number(e.target.value))} />
+                </label>
+                <label>
+                  Loại Data
+                  <select aria-label="Loại Data chạy" value={startDataType} onChange={(e) => { setStartDataType(e.target.value as "REAL" | "VIRTUAL"); setPaste(""); }}>
+                    <option value="REAL">Data thật · lấy từ Kho và dùng lâu dài</option>
+                    <option value="VIRTUAL">Data ảo · dán trực tiếp, chỉ dùng lượt này</option>
+                  </select>
                 </label>
                 <label>
                   Nạp/Key
@@ -1077,11 +1085,11 @@ export default function Workspace({ user }: { user: User }) {
                     Thiếu: <strong>{shortage}</strong>
                   </span>
                 </div>
-                {shortage > 0 && (
+                {(startDataType === "VIRTUAL" || shortage > 0) && (
                   <label>
-                    Data bổ sung
+                    {startDataType === "VIRTUAL" ? "Dán Data ảo" : "Data thật bổ sung"}
                     <textarea required rows={6} placeholder="Họ tên|STK|Ngân hàng" value={paste} onChange={(e) => setPaste(e.target.value)} />
-                    <small>Phần thừa được lưu vào Kho Key. Tối đa 500 dòng.</small>
+                    <small>{startDataType === "VIRTUAL" ? "Chỉ lấy đủ số Key; phần thừa không lưu vào Kho." : "Phần thừa được lưu vào Kho Key."} Tối đa 500 dòng.</small>
                   </label>
                 )}
               </div>
@@ -1105,13 +1113,6 @@ export default function Workspace({ user }: { user: User }) {
               <div className="dialog-body">
                 {isAdmin && (
                   <>
-                    <label>
-                      Loại Data
-                      <select aria-label="Loại Data" value={importDataType} onChange={(e) => setImportDataType(e.target.value as "REAL" | "VIRTUAL")}>
-                        <option value="REAL">Data thật · dùng cho tương lai</option>
-                        <option value="VIRTUAL">Data ảo · dùng một lần rồi lưu trữ</option>
-                      </select>
-                    </label>
                     <label>
                       Giao trực tiếp
                       <select value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>

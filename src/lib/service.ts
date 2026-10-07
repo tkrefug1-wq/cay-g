@@ -8,7 +8,7 @@ type Tx = Prisma.TransactionClient;
 const idsSchema = z.array(z.string().min(1).max(100)).min(1).max(5000).transform(a => [...new Set(a)]);
 const base = z.object({ date: dateSchema });
 export const commandSchema = z.discriminatedUnion('action', [
-  base.extend({ action: z.literal('start'), platformId: z.string(), count: z.number().int().min(1).max(500), deposit: amountSchema, data: z.string().max(200_000).default('') }),
+  base.extend({ action: z.literal('start'), platformId: z.string(), count: z.number().int().min(1).max(500), deposit: amountSchema, data: z.string().max(200_000).default(''), dataType: z.enum(['REAL', 'VIRTUAL']).default('REAL') }),
   z.object({ action: z.literal('import'), data: z.string().max(200_000), ownerId: z.string().nullable().optional(), dataType: z.enum(['REAL', 'VIRTUAL']).default('REAL') }),
   z.object({ action: z.literal('assign'), ids: idsSchema, ownerId: z.string() }),
   z.object({ action: z.literal('withdraw'), usageId: z.string(), withdrawal: amountSchema }),
@@ -45,10 +45,11 @@ async function importKeys(tx: Tx, actor: Actor, text: string, ownerId: string | 
   const data = parseData(text);
   if (ownerId) await checkDay(tx, ownerId, day());
   const accounts = data.map(d => d.normalizedStk);
-  const existing = await tx.key.findMany({ where: { normalizedStk: { in: accounts } }, select: { id: true, normalizedStk: true, archived: true, ownerId: true } });
+  const existing = await tx.key.findMany({ where: { normalizedStk: { in: accounts } }, select: { id: true, normalizedStk: true, archived: true, ownerId: true, dataType: true } });
   for (const key of existing) {
     ensure(!key.archived, `STK ${key.normalizedStk} đã lưu trữ, không thể sử dụng`, 409);
     ensure(key.ownerId === ownerId || key.ownerId === null, `STK ${key.normalizedStk} đã thuộc người khác; không thể nhận lại`, 409);
+    ensure(key.dataType === dataType, `STK ${key.normalizedStk} đã được lưu là ${key.dataType === 'REAL' ? 'Data thật' : 'Data ảo'}`, 409);
   }
   const found = new Set(existing.map(k => k.normalizedStk));
   const fresh = data.filter(d => !found.has(d.normalizedStk));
@@ -60,7 +61,7 @@ async function importKeys(tx: Tx, actor: Actor, text: string, ownerId: string | 
     await tx.todayEntry.updateMany({ where: { keyId: { in: keys.map(k => k.id) }, date: day() }, data: { visible: true } });
   }
   await audit(tx, actor, 'IMPORT', ownerId ?? 'unassigned', { created: fresh.length, reused: existing.length });
-  return { created: fresh.length, reused: existing.length };
+  return { created: fresh.length, reused: existing.length, keyIds: keys.map(k => k.id) };
 }
 export async function calculate(tx: Tx, workerId: string, date: string) {
   const user = await tx.user.findUniqueOrThrow({ where: { id: workerId } });
@@ -98,11 +99,16 @@ async function execute(tx: Tx, actor: Actor, cmd: Command): Promise<Prisma.Input
       const platform = await tx.platform.findUnique({ where: { id: cmd.platformId } });
       ensure(platform?.active, 'Platform không khả dụng');
       let imported = { created: 0, reused: 0 };
-      if (cmd.data.trim()) imported = await importKeys(tx, actor, cmd.data, actor.id, false);
-      const keys = await tx.key.findMany({ where: { ownerId: actor.id, archived: false, OR: [
-        { dataType: 'REAL', usages: { none: { platformId: cmd.platformId, status: { not: 'CANCELLED' } } } },
-        { dataType: 'VIRTUAL', usages: { none: { status: { not: 'CANCELLED' } } } },
-      ] }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: cmd.count, select: { id: true } });
+      let importedKeyIds: string[] = [];
+      if (cmd.data.trim()) {
+        const result = await importKeys(tx, actor, cmd.data, actor.id, false, cmd.dataType);
+        imported = { created: result.created, reused: result.reused };
+        importedKeyIds = result.keyIds;
+      }
+      ensure(cmd.dataType === 'REAL' || importedKeyIds.length > 0, 'Data ảo phải được dán trực tiếp khi làm Platform');
+      const keys = await tx.key.findMany({ where: { ownerId: actor.id, archived: false, dataType: cmd.dataType,
+        ...(cmd.dataType === 'VIRTUAL' ? { id: { in: importedKeyIds }, usages: { none: { status: { not: 'CANCELLED' } } } } : { usages: { none: { platformId: cmd.platformId, status: { not: 'CANCELLED' } } } })
+      }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: cmd.count, select: { id: true } });
       ensure(keys.length === cmd.count, `Key có sẵn: ${keys.length}. Thiếu: ${cmd.count - keys.length}. Dán thêm Data.`, 409);
       const settlement = await tx.settlement.upsert({ where: { workerId_date: { workerId: actor.id, date: cmd.date } }, create: { workerId: actor.id, date: cmd.date }, update: {} });
       if (actor.parentCtvId) await tx.settlement.upsert({ where: { workerId_date: { workerId: actor.parentCtvId, date: cmd.date } }, create: { workerId: actor.parentCtvId, date: cmd.date }, update: {} });
@@ -114,6 +120,7 @@ async function execute(tx: Tx, actor: Actor, cmd: Command): Promise<Prisma.Input
       await tx.usage.createMany({ data: keyIds.filter(id => !old.has(id)).map(keyId => ({ keyId, platformId: cmd.platformId, settlementId: settlement.id, deposit: cmd.deposit })) });
       await tx.todayEntry.createMany({ data: keyIds.map(keyId => ({ keyId, date: cmd.date })), skipDuplicates: true });
       await tx.todayEntry.updateMany({ where: { keyId: { in: keyIds }, date: cmd.date }, data: { visible: true } });
+      if (cmd.dataType === 'VIRTUAL') await tx.key.deleteMany({ where: { id: { in: importedKeyIds.filter(id => !keyIds.includes(id)) }, usages: { none: {} } } });
       await audit(tx, actor, 'START', settlement.id, { platformId: cmd.platformId, keyIds, deposit: cmd.deposit });
       return { started: keys.length, ...imported };
     }
@@ -151,6 +158,13 @@ async function execute(tx: Tx, actor: Actor, cmd: Command): Promise<Prisma.Input
       ensure(keys.length === cmd.ids.length, 'Không có quyền với Data/Key', 403);
       await tx.usage.updateMany({ where: { keyId: { in: cmd.ids }, settlement: { workerId: actor.id, date: cmd.date }, status: 'ACTIVE' }, data: { status: 'CANCELLED' } });
       await tx.todayEntry.updateMany({ where: { keyId: { in: cmd.ids }, date: cmd.date }, data: { visible: false } });
+      const disposable = await tx.key.findMany({ where: { id: { in: cmd.ids }, dataType: 'VIRTUAL', usages: { none: { status: { not: 'CANCELLED' } } } }, select: { id: true } });
+      const disposableIds = disposable.map(key => key.id);
+      if (disposableIds.length) {
+        await tx.usage.deleteMany({ where: { keyId: { in: disposableIds }, status: 'CANCELLED' } });
+        await tx.todayEntry.deleteMany({ where: { keyId: { in: disposableIds } } });
+        await tx.key.deleteMany({ where: { id: { in: disposableIds } } });
+      }
       await audit(tx, actor, 'REMOVE_TODAY', actor.id, { keyIds: cmd.ids, date: cmd.date });
       return { removed: keys.length };
     }
