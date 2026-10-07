@@ -152,6 +152,8 @@ export default function Workspace({ user }: { user: User }) {
   const requestRef = useRef<{ body: string; id: string } | null>(null),
     generation = useRef(0),
     mutationQueue = useRef(Promise.resolve());
+  const detailCache = useRef(new Map<string, Detail>()),
+    detailRequest = useRef(0);
   const withdrawalTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const load = useCallback(
     async (background = false) => {
@@ -286,22 +288,40 @@ export default function Workspace({ user }: { user: User }) {
     },
     [],
   );
-  async function openKey(id: string, mode: Modal = "detail") {
+  async function openKey(id: string, mode: Modal = "detail", row?: KeyRow) {
+    const request = ++detailRequest.current;
+    const cached = detailCache.current.get(id);
+    const preview: Detail | null =
+      cached ??
+      (row
+        ? {
+            id: row.id,
+            fields: [row.fullName, row.normalizedStk, row.bank, "", "", "", "", "", "", ""],
+            archived: row.archived,
+            usages: row.usages.map((usage) => ({ ...usage, platform: data?.platforms.find((platform) => platform.id === usage.platformId) })),
+          }
+        : null);
     setError("");
-    setDetail(null);
+    setDetail(preview);
+    if (preview) {
+      setFields(preview.fields);
+      setWithdrawals(Object.fromEntries(preview.usages.map((usage) => [usage.id, usage.withdrawal])));
+    }
     setDetailLoading(true);
     setModal(mode);
     try {
       const r = await fetch(`/api/keys/${id}`, { cache: "no-store" });
       const result = await r.json();
       if (!r.ok) throw new Error(result.error);
+      if (detailRequest.current !== request) return;
+      detailCache.current.set(id, result);
       setDetail(result);
       setFields(result.fields);
       setWithdrawals(Object.fromEntries(result.usages.map((u: Usage) => [u.id, u.withdrawal])));
     } catch (err) {
-      setError((err as Error).message);
+      if (detailRequest.current === request) setError((err as Error).message);
     } finally {
-      setDetailLoading(false);
+      if (detailRequest.current === request) setDetailLoading(false);
     }
   }
   function switchView(next: string) {
@@ -816,7 +836,7 @@ export default function Workspace({ user }: { user: User }) {
                               </>
                             )}
                             <td>
-                              <button className="row-action" onClick={() => void openKey(k.id)}>
+                              <button className="row-action" onClick={() => void openKey(k.id, "detail", k)}>
                                 {["today", "summary"].includes(view) ? "Mở / Nhập Rút" : "Mở"}
                                 <ArrowUpRight size={14} />
                               </button>
@@ -1104,7 +1124,7 @@ export default function Workspace({ user }: { user: User }) {
               </div>
             </form>
           )}
-          {detailLoading && (modal === "detail" || modal === "edit") && <div className="dialog-body compact-empty muted">Đang tải Data / Key…</div>}
+          {detailLoading && !detail && (modal === "detail" || modal === "edit") && <div className="dialog-body compact-empty muted">Đang tải Data / Key…</div>}
           {modal === "detail" && detail && (
             <>
               <div className="dialog-body">
@@ -1117,6 +1137,7 @@ export default function Workspace({ user }: { user: User }) {
                   </div>
                   <button
                     className="subtle"
+                    disabled={detailLoading}
                     onClick={async () => {
                       try {
                         await navigator.clipboard.writeText(detail.fields.join("|"));
@@ -1193,7 +1214,7 @@ export default function Workspace({ user }: { user: User }) {
                 </div>
               </div>
               <div className="dialog-footer">
-                <button onClick={() => setModal("edit")}>Sửa Key</button>
+                <button disabled={detailLoading} onClick={() => setModal("edit")}>Sửa Key</button>
                 <button onClick={() => setModal(null)}>Đóng</button>
               </div>
             </>
