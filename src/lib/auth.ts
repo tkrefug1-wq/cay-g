@@ -35,9 +35,8 @@ export async function signIn(email: string, password: string) {
   const valid = await verifyPassword(password, user?.passwordHash ?? await dummyHash);
   ensure(valid && user?.active, 'Email hoặc mật khẩu không đúng', 401);
   const token = randomBytes(32).toString('hex');
-  const requiresMfa = user.role === 'ADMIN';
-  await db.session.create({ data: { tokenHash: digest(token), userId: user.id, mfaVerified: !requiresMfa, expiresAt: new Date(Date.now() + (requiresMfa ? 10 * 60_000 : 7 * 86400_000)) } });
-  return { token, mfa: requiresMfa ? (user.mfaEnabled ? 'verify' : 'setup') : null };
+  await db.session.create({ data: { tokenHash: digest(token), userId: user.id, mfaVerified: true, expiresAt: new Date(Date.now() + 7 * 86400_000) } });
+  return { token, mfa: null };
 }
 export async function pendingAdmin() {
   const token = (await cookies()).get(sessionCookie)?.value; if (!token) return null;
