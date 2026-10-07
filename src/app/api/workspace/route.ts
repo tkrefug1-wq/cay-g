@@ -8,6 +8,6 @@ export async function GET(request: Request) {
   catch (error) { return failure(error); }
 }
 export async function POST(request: Request) {
-  try { checkOrigin(request); return NextResponse.json(await mutate(await requireUser(), await readBody(request), request.headers.get('idempotency-key') ?? '')); }
+  try { checkOrigin(request); const result = await mutate(await requireUser(), await readBody(request), request.headers.get('idempotency-key') ?? ''); return NextResponse.json({ result, revision: new Date().toISOString() }); }
   catch (error) { return failure(error); }
 }

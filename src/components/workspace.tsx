@@ -23,7 +23,7 @@ function Dialog({ title, children, close, busy }: { title: string; children: Rea
 export default function Workspace({ user }: { user: User }) {
   const isAdmin = user.role === 'ADMIN';
   const [view, setView] = useState(isAdmin ? 'data' : 'today'), [date, setDate] = useState(today), [page, setPage] = useState(1), [search, setSearch] = useState(''), [filter, setFilter] = useState(''), [archived, setArchived] = useState(false);
-  const [data, setData] = useState<Snapshot | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false);
+  const [data, setData] = useState<Snapshot | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false), [syncState, setSyncState] = useState<'idle' | 'syncing' | 'synced'>('idle');
   const [selected, setSelected] = useState<string[]>([]), [modal, setModal] = useState<Modal>(null), [detail, setDetail] = useState<Detail | null>(null), [fields, setFields] = useState<string[]>([]);
   const [platformId, setPlatformId] = useState(''), [count, setCount] = useState(1), [depositMode, setDepositMode] = useState('100'), [deposit, setDeposit] = useState('100'), [paste, setPaste] = useState(''), [ownerId, setOwnerId] = useState(''), [withdrawals, setWithdrawals] = useState<Record<string, string>>({});
   const [workerRole, setWorkerRole] = useState('CTV');
@@ -45,15 +45,15 @@ export default function Workspace({ user }: { user: User }) {
   useEffect(() => { const id = setInterval(() => { if (!busy) void load(true); }, 20000); return () => clearInterval(id); }, [busy, load]);
   useEffect(() => { setSelected([]); }, [view, date, page, search, filter, archived]);
   async function performMutation(command: Record<string, unknown>, message: string, keepOpen = false) {
-    setBusy(true); setError(''); setNotice('');
+    setBusy(true); setSyncState('syncing'); setError(''); setNotice('');
     const body = JSON.stringify(command);
     if (!requestRef.current || requestRef.current.body !== body) requestRef.current = { body, id: crypto.randomUUID() };
     try {
       const r = await fetch('/api/workspace', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': requestRef.current.id }, body });
       const result = await r.json();
       if (!r.ok) { if (r.status < 500) requestRef.current = null; throw new Error(result.error); }
-      requestRef.current = null; setNotice(message); setSelected([]); if (!keepOpen) setModal(null); void load(true); return true;
-    } catch (err) { setError((err as Error).message); return false; }
+      requestRef.current = null; setNotice(message); setSyncState('synced'); setSelected([]); if (!keepOpen) setModal(null); void load(true); return true;
+    } catch (err) { setSyncState('idle'); setError((err as Error).message); return false; }
     finally { setBusy(false); }
   }
   function mutation(command: Record<string, unknown>, message: string, keepOpen = false) {
@@ -77,7 +77,7 @@ export default function Workspace({ user }: { user: User }) {
   const nav = isAdmin ? [{ id: 'data', icon: Database }, { id: 'settlements', icon: ListChecks }] : [{ id: 'today', icon: CalendarDays }, { id: 'inventory', icon: KeyRound }, { id: 'summary', icon: ChartNoAxesCombined }];
   const toggle = (id: string) => setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
   return <div className="shell"><aside className="sidebar"><div className="brand"><Sprout size={28} />CAY G<span className="brand-dot" /></div><div className="nav-caption">{isAdmin ? 'QUẢN TRỊ' : 'KHÔNG GIAN LÀM VIỆC'}</div><nav>{nav.map(n => <button key={n.id} className={view === n.id ? 'active' : ''} onClick={() => switchView(n.id)}><n.icon size={19} />{titles[n.id]}{view === n.id && <span className="nav-indicator" />}</button>)}</nav><div className="sidebar-bottom"><div className="user-avatar">{user.name.charAt(0)}</div><div><strong>{user.name}</strong><small>{user.role === 'CTV_CON' ? 'CTV con' : user.role}</small></div><button className="icon" aria-label="Đổi tài khoản và mật khẩu" onClick={() => open('account')}><KeyRound size={17} /></button><button className="icon" aria-label="Đăng xuất" onClick={async () => { const r = await fetch('/api/auth/logout', { method: 'POST' }); if (r.ok) window.location.assign('/login'); else setError('Không thể đăng xuất'); }}><LogOut size={17} /></button></div></aside>
-    <div className="main"><header className="topbar"><span>Không gian làm việc <span className="slash">/</span> <strong>{titles[view]}</strong></span><span className="live"><span /> {loading ? 'Đang đồng bộ…' : error ? 'Cần kiểm tra' : data ? 'Đã đồng bộ' : 'Đang kết nối'}</span></header><main className="content"><div className="page-heading"><div><div className="eyebrow">{isAdmin ? 'QUẢN LÝ VẬN HÀNH' : 'CAY G / WORKSPACE'}</div><h1>{titles[view]}</h1></div><div className="actions">{['today', 'summary', 'settlements'].includes(view) && <label className="date-control"><CalendarDays size={16} /><input aria-label="Ngày" type="date" value={date} max={today()} onChange={e => { if (e.target.value) { setDate(e.target.value); setPage(1); } }} /></label>}{view === 'today' && <button className="primary" disabled={!!locked || date !== today() || !data} onClick={() => open('start')}><Plus size={18} />Làm nền tảng</button>}{['inventory', 'data'].includes(view) && <button className="primary" onClick={() => open('import')}><Plus size={18} />{isAdmin ? 'Nhập Data' : 'Thêm Key'}</button>}{view === 'summary' && <button className="primary" disabled={busy || !!locked || !data} onClick={() => { if (confirm('Chốt ngày? Sau khi chốt, dữ liệu ngày này không thể sửa.')) void mutation({ action: 'close', date }, 'Đã chốt ngày'); }}><LockKeyhole size={17} />Chốt ngày</button>}</div></div>
+    <div className="main"><header className="topbar"><span>Không gian làm việc <span className="slash">/</span> <strong>{titles[view]}</strong></span><span className="live"><span /> {syncState === 'syncing' ? 'Đang lưu…' : loading ? 'Đang đồng bộ…' : error ? 'Cần kiểm tra' : data ? 'Đã đồng bộ' : 'Đang kết nối'}</span></header><main className="content"><div className="page-heading"><div><div className="eyebrow">{isAdmin ? 'QUẢN LÝ VẬN HÀNH' : 'CAY G / WORKSPACE'}</div><h1>{titles[view]}</h1></div><div className="actions">{['today', 'summary', 'settlements'].includes(view) && <label className="date-control"><CalendarDays size={16} /><input aria-label="Ngày" type="date" value={date} max={today()} onChange={e => { if (e.target.value) { setDate(e.target.value); setPage(1); } }} /></label>}{view === 'today' && <button className="primary" disabled={!!locked || date !== today() || !data} onClick={() => open('start')}><Plus size={18} />Làm nền tảng</button>}{['inventory', 'data'].includes(view) && <button className="primary" onClick={() => open('import')}><Plus size={18} />{isAdmin ? 'Nhập Data' : 'Thêm Key'}</button>}{view === 'summary' && <button className="primary" disabled={busy || !!locked || !data} onClick={() => { if (confirm('Chốt ngày? Sau khi chốt, dữ liệu ngày này không thể sửa.')) void mutation({ action: 'close', date }, 'Đã chốt ngày'); }}><LockKeyhole size={17} />Chốt ngày</button>}</div></div>
     {error && !modal && <div className="error" role="alert">{error}</div>}{notice && <div className="notice" role="status"><Check size={17} />{notice}</div>}
     {!isAdmin && data?.totals && <div className="metrics">{[['Nạp', data.totals.deposit], ['Rút', data.totals.withdrawal], ['Phí', data.totals.fee], ['Lãi/Lỗ', data.totals.profit], ['Nhận được', data.totals.payout]].map(([name, value]) => <div key={name} className={name === 'Nhận được' ? 'metric highlight' : 'metric'}><span>{name}{name === 'Nhận được' && <ArrowUpRight size={16} />}</span><strong className={Number(value) < 0 ? 'negative' : ''}>{money(value)}</strong>{name === 'Nhận được' && Number(data.totals?.childCommission) !== 0 && <small>Gồm HH con: {money(data.totals?.childCommission)}</small>}</div>)}</div>}
     {view === 'summary' && data && <div className="summary-strip"><span>Chưa hoàn thành <strong>{data.totals?.incomplete ?? 0}</strong></span><span>Trạng thái ngày <Badge status={data.settlement?.status ?? 'OPEN'} /></span></div>}
@@ -110,5 +110,6 @@ export default function Workspace({ user }: { user: User }) {
     </Dialog>}
   </div>;
 }
+
 
 
