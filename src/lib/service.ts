@@ -21,6 +21,8 @@ export const commandSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('platformRename'), id: z.string(), name: z.string().trim().min(1).max(80) }),
   z.object({ action: z.literal('platformDelete'), id: z.string() }),
   z.object({ action: z.literal('worker'), name: z.string().trim().min(1).max(100), email: z.email().max(200), password: z.string().min(12).max(200), role: z.enum(['CTV', 'CTV_CON']), parentCtvId: z.string().nullable() }),
+  z.object({ action: z.literal('workerUpdate'), id: z.string(), name: z.string().trim().min(1).max(100), email: z.email().max(200), password: z.string().min(12).max(200).optional(), role: z.enum(['CTV', 'CTV_CON']), parentCtvId: z.string().nullable() }),
+  z.object({ action: z.literal('workerDisable'), id: z.string() }),
 ]);
 export type Command = z.infer<typeof commandSchema>;
 async function audit(tx: Tx, actor: Actor, action: string, entityId: string, detail: Prisma.InputJsonValue = {}) {
@@ -215,6 +217,18 @@ async function execute(tx: Tx, actor: Actor, cmd: Command): Promise<Prisma.Input
       const user = await tx.user.create({ data: { name: cmd.name, email: cmd.email.toLowerCase(), passwordHash: await hashPassword(cmd.password), role: cmd.role, parentCtvId: cmd.parentCtvId } });
       await audit(tx, actor, 'CREATE_WORKER', user.id, { role: cmd.role });
       return { id: user.id };
+    }
+    case 'workerUpdate': {
+      admin(actor); ensure(cmd.id !== actor.id, 'Không thể sửa tài khoản hiện tại', 409); ensure(cmd.role === 'CTV_CON' ? !!cmd.parentCtvId : !cmd.parentCtvId, 'CTV con bắt buộc có CTV cha');
+      const target = await tx.user.findUnique({ where: { id: cmd.id } }); ensure(target && target.role !== 'ADMIN', 'Không tìm thấy CTV', 404);
+      if (cmd.parentCtvId) { const parent = await tx.user.findUnique({ where: { id: cmd.parentCtvId } }); ensure(parent?.role === 'CTV' && parent.active, 'CTV cha không hợp lệ', 409); }
+      const data: Prisma.UserUpdateInput = { name: cmd.name, email: cmd.email.toLowerCase(), role: cmd.role, parent: cmd.parentCtvId ? { connect: { id: cmd.parentCtvId } } : { disconnect: true } };
+      if (cmd.password) data.passwordHash = await hashPassword(cmd.password);
+      await tx.user.update({ where: { id: cmd.id }, data }); await audit(tx, actor, 'UPDATE_WORKER', cmd.id, { role: cmd.role }); return { updated: true };
+    }
+    case 'workerDisable': {
+      admin(actor); ensure(cmd.id !== actor.id, 'Không thể vô hiệu hóa tài khoản hiện tại', 409); const target = await tx.user.findUnique({ where: { id: cmd.id } }); ensure(target && target.role !== 'ADMIN', 'Không tìm thấy CTV', 404);
+      await tx.user.update({ where: { id: cmd.id }, data: { active: false } }); await tx.session.deleteMany({ where: { userId: cmd.id } }); await audit(tx, actor, 'DISABLE_WORKER', cmd.id, { name: target.name }); return { disabled: true };
     }
   }
 }
