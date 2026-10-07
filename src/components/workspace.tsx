@@ -1,128 +1,1438 @@
-'use client';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { CalendarDays, KeyRound, ChartNoAxesCombined, Database, ListChecks, LogOut, Plus, Search, ArrowUpRight, Trash2, X, Sprout, ChevronLeft, ChevronRight, LockKeyhole, RefreshCw, Users, Upload, Pencil, Check, Copy } from 'lucide-react';
-type User = { id: string; name: string; email: string; role: string; parentCtvId: string | null };
+"use client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { CalendarDays, KeyRound, ChartNoAxesCombined, Database, ListChecks, LogOut, Plus, Search, ArrowUpRight, Trash2, X, Sprout, ChevronLeft, ChevronRight, LockKeyhole, RefreshCw, Users, Upload, Pencil, Check, Copy } from "lucide-react";
+type User = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  parentCtvId: string | null;
+};
 type Platform = { id: string; name: string; active: boolean };
-type Usage = { id: string; platformId: string; deposit: string; withdrawal: string; status: string; settlement: { date: string; status: string }; platform?: Platform };
-type KeyRow = { depositTotal: string; withdrawalTotal: string; id: string; fullName: string; normalizedStk: string; bank: string; archived: boolean; owner: { id: string; name: string; role: string } | null; usages: Usage[] };
-type Totals = { deposit: string; withdrawal: string; fee: string; profit: string; payout: string; parentCommission: string; childCommission: string; adminShare: string; incomplete: number };
-type Settlement = Totals & { id: string; workerId: string; worker: User; date: string; status: string };
-type Snapshot = { date: string; total: number; pageSize: number; keys?: KeyRow[]; platforms: Platform[]; workers: User[]; eligible?: Record<string, number>; settlement?: Settlement; totals?: Totals; settlements?: Settlement[] };
-type Detail = { id: string; fields: string[]; archived: boolean; usages: Usage[] };
-type Modal = 'start' | 'import' | 'detail' | 'edit' | 'platform' | 'worker' | 'assign' | 'account' | null;
-const money = (v: string | number | undefined) => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 4 }).format(Number(v ?? 0));
-const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-const fieldNames = ['Họ tên', 'STK', 'Ngân hàng', 'Chi nhánh', 'Tài khoản', 'Mật khẩu', 'PIN rút', 'SĐT', 'Email', 'Ngày sinh'];
-const titles: Record<string, string> = { today: 'Hôm nay', inventory: 'Kho Key', summary: 'Tổng kết', data: 'Data', settlements: 'Đối soát' };
-function Badge({ status }: { status: string }) { return <span className={`badge ${status.toLowerCase()}`}>{({ ACTIVE: 'Đang làm', DONE: 'Hoàn thành', CANCELLED: 'Đã hủy' } as Record<string, string>)[status] ?? status}</span>; }
+type Usage = {
+  id: string;
+  platformId: string;
+  deposit: string;
+  withdrawal: string;
+  status: string;
+  settlement: { date: string; status: string };
+  platform?: Platform;
+};
+type KeyRow = {
+  depositTotal: string;
+  withdrawalTotal: string;
+  id: string;
+  fullName: string;
+  normalizedStk: string;
+  bank: string;
+  archived: boolean;
+  owner: { id: string; name: string; role: string } | null;
+  usages: Usage[];
+};
+type Totals = {
+  deposit: string;
+  withdrawal: string;
+  fee: string;
+  profit: string;
+  payout: string;
+  parentCommission: string;
+  childCommission: string;
+  adminShare: string;
+  incomplete: number;
+};
+type Settlement = Totals & {
+  id: string;
+  workerId: string;
+  worker: User;
+  date: string;
+  status: string;
+};
+type Snapshot = {
+  date: string;
+  total: number;
+  pageSize: number;
+  keys?: KeyRow[];
+  platforms: Platform[];
+  workers: User[];
+  eligible?: Record<string, number>;
+  settlement?: Settlement;
+  totals?: Totals;
+  settlements?: Settlement[];
+};
+type Detail = {
+  id: string;
+  fields: string[];
+  archived: boolean;
+  usages: Usage[];
+};
+type Modal = "start" | "import" | "detail" | "edit" | "platform" | "worker" | "assign" | "account" | null;
+const money = (v: string | number | undefined) => new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 4 }).format(Number(v ?? 0));
+const today = () =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+const fieldNames = ["Họ tên", "STK", "Ngân hàng", "Chi nhánh", "Tài khoản", "Mật khẩu", "PIN rút", "SĐT", "Email", "Ngày sinh"];
+const titles: Record<string, string> = {
+  today: "Hôm nay",
+  inventory: "Kho Key",
+  summary: "Tổng kết",
+  data: "Data",
+  settlements: "Đối soát",
+};
+function Badge({ status }: { status: string }) {
+  return (
+    <span className={`badge ${status.toLowerCase()}`}>
+      {(
+        {
+          ACTIVE: "Đang làm",
+          DONE: "Hoàn thành",
+          CANCELLED: "Đã hủy",
+        } as Record<string, string>
+      )[status] ?? status}
+    </span>
+  );
+}
 function Dialog({ title, children, close, busy }: { title: string; children: React.ReactNode; close: () => void; busy: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => { ref.current?.showModal(); }, []);
-  return <dialog ref={ref} aria-label={title} onCancel={e => { e.preventDefault(); if (!busy) close(); }}><div className="dialog-head"><h2>{title}</h2><button className="icon" aria-label="Đóng" onClick={close} disabled={busy}><X size={20} /></button></div>{children}</dialog>;
+  useEffect(() => {
+    ref.current?.showModal();
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      aria-label={title}
+      onCancel={(e) => {
+        e.preventDefault();
+        if (!busy) close();
+      }}
+    >
+      <div className="dialog-head">
+        <h2>{title}</h2>
+        <button className="icon" aria-label="Đóng" onClick={close} disabled={busy}>
+          <X size={20} />
+        </button>
+      </div>
+      {children}
+    </dialog>
+  );
 }
 export default function Workspace({ user }: { user: User }) {
-  const isAdmin = user.role === 'ADMIN';
-  const [view, setView] = useState(isAdmin ? 'data' : 'today'), [date, setDate] = useState(today), [page, setPage] = useState(1), [search, setSearch] = useState(''), [filter, setFilter] = useState(''), [archived, setArchived] = useState(false);
-  const [data, setData] = useState<Snapshot | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false), [syncState, setSyncState] = useState<'idle' | 'syncing' | 'synced'>('idle');
-  const [selected, setSelected] = useState<string[]>([]), [modal, setModal] = useState<Modal>(null), [detail, setDetail] = useState<Detail | null>(null), [fields, setFields] = useState<string[]>([]);
-  const [platformId, setPlatformId] = useState(''), [count, setCount] = useState(1), [depositMode, setDepositMode] = useState('100'), [deposit, setDeposit] = useState('100'), [paste, setPaste] = useState(''), [ownerId, setOwnerId] = useState(''), [withdrawals, setWithdrawals] = useState<Record<string, string>>({});
-  const [workerRole, setWorkerRole] = useState('CTV');
-  const [editingWorkerId, setEditingWorkerId] = useState('');
-  const [editingPlatformId, setEditingPlatformId] = useState(''), [platformDraft, setPlatformDraft] = useState('');
-  const requestRef = useRef<{ body: string; id: string } | null>(null), generation = useRef(0), mutationQueue = useRef(Promise.resolve());
-  const load = useCallback(async (background = false) => {
-    const gen = ++generation.current; if (!background) setLoading(true);
-    try {
-      const q = new URLSearchParams({ view, date, page: String(page), search, archived: String(archived), [view === 'settlements' ? 'workerId' : 'ownerId']: filter });
-      const r = await fetch(`/api/workspace?${q}`, { cache: 'no-store' });
-      if (r.status === 401) { window.location.assign('/login'); return; }
-      const result = await r.json(); if (!r.ok) throw new Error(result.error);
-      if (generation.current === gen) { setData(result); setError(''); }
-    } catch (err) { if (generation.current === gen) setError((err as Error).message); }
-    finally { if (generation.current === gen && !background) setLoading(false); }
+  const isAdmin = user.role === "ADMIN";
+  const [view, setView] = useState(isAdmin ? "data" : "today"),
+    [date, setDate] = useState(today),
+    [page, setPage] = useState(1),
+    [search, setSearch] = useState(""),
+    [filter, setFilter] = useState(""),
+    [archived, setArchived] = useState(false);
+  const [data, setData] = useState<Snapshot | null>(null),
+    [loading, setLoading] = useState(true),
+    [error, setError] = useState(""),
+    [notice, setNotice] = useState(""),
+    [busy, setBusy] = useState(false),
+    [syncState, setSyncState] = useState<"idle" | "syncing" | "synced">("idle");
+  const [selected, setSelected] = useState<string[]>([]),
+    [modal, setModal] = useState<Modal>(null),
+    [detail, setDetail] = useState<Detail | null>(null),
+    [fields, setFields] = useState<string[]>([]);
+  const [platformId, setPlatformId] = useState(""),
+    [count, setCount] = useState(1),
+    [depositMode, setDepositMode] = useState("100"),
+    [deposit, setDeposit] = useState("100"),
+    [paste, setPaste] = useState(""),
+    [ownerId, setOwnerId] = useState(""),
+    [withdrawals, setWithdrawals] = useState<Record<string, string>>({});
+  const [workerRole, setWorkerRole] = useState("CTV");
+  const [editingWorkerId, setEditingWorkerId] = useState("");
+  const [editingPlatformId, setEditingPlatformId] = useState(""),
+    [platformDraft, setPlatformDraft] = useState("");
+  const requestRef = useRef<{ body: string; id: string } | null>(null),
+    generation = useRef(0),
+    mutationQueue = useRef(Promise.resolve());
+  const withdrawalTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const load = useCallback(
+    async (background = false) => {
+      const gen = ++generation.current;
+      if (!background) setLoading(true);
+      try {
+        const q = new URLSearchParams({
+          view,
+          date,
+          page: String(page),
+          search,
+          archived: String(archived),
+          [view === "settlements" ? "workerId" : "ownerId"]: filter,
+        });
+        const r = await fetch(`/api/workspace?${q}`, { cache: "no-store" });
+        if (r.status === 401) {
+          window.location.assign("/login");
+          return;
+        }
+        const result = await r.json();
+        if (!r.ok) throw new Error(result.error);
+        if (generation.current === gen) {
+          setData(result);
+          setError("");
+        }
+      } catch (err) {
+        if (generation.current === gen) setError((err as Error).message);
+      } finally {
+        if (generation.current === gen && !background) setLoading(false);
+      }
+    },
+    [view, date, page, search, filter, archived],
+  );
+  useEffect(() => {
+    const id = setTimeout(() => void load(), search ? 450 : 0);
+    return () => clearTimeout(id);
+  }, [load, search]);
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (!busy && document.visibilityState === "visible") void load(true);
+    }, 60000);
+    return () => clearInterval(id);
+  }, [busy, load]);
+  useEffect(() => {
+    setSelected([]);
   }, [view, date, page, search, filter, archived]);
-  useEffect(() => { const id = setTimeout(() => void load(), search ? 450 : 0); return () => clearTimeout(id); }, [load, search]);
-  useEffect(() => { const id = setInterval(() => { if (!busy && document.visibilityState === 'visible') void load(true); }, 60000); return () => clearInterval(id); }, [busy, load]);
-  useEffect(() => { setSelected([]); }, [view, date, page, search, filter, archived]);
   async function performMutation(command: Record<string, unknown>, message: string, keepOpen = false) {
-    setBusy(true); setSyncState('syncing'); setError(''); setNotice('');
+    setBusy(true);
+    setSyncState("syncing");
+    setError("");
+    setNotice("");
     const body = JSON.stringify(command);
     if (!requestRef.current || requestRef.current.body !== body) requestRef.current = { body, id: crypto.randomUUID() };
     try {
-      const r = await fetch('/api/workspace', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': requestRef.current.id }, body });
+      const r = await fetch("/api/workspace", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": requestRef.current.id,
+        },
+        body,
+      });
       const result = await r.json();
-      if (!r.ok) { if (r.status < 500) requestRef.current = null; throw new Error(result.error); }
-      requestRef.current = null; setNotice(message); setSyncState('synced'); setSelected([]); if (!keepOpen) setModal(null); void load(true); return true;
-    } catch (err) { setSyncState('idle'); setError((err as Error).message); return false; }
-    finally { setBusy(false); }
+      if (!r.ok) {
+        if (r.status < 500) requestRef.current = null;
+        throw new Error(result.error);
+      }
+      requestRef.current = null;
+      setNotice(message);
+      setSyncState("synced");
+      setSelected([]);
+      if (!keepOpen) setModal(null);
+      void load(true);
+      return true;
+    } catch (err) {
+      setSyncState("idle");
+      setError((err as Error).message);
+      return false;
+    } finally {
+      setBusy(false);
+    }
   }
   function mutation(command: Record<string, unknown>, message: string, keepOpen = false) {
     const run = mutationQueue.current.then(() => performMutation(command, message, keepOpen));
-    mutationQueue.current = run.then(() => undefined, () => undefined);
+    mutationQueue.current = run.then(
+      () => undefined,
+      () => undefined,
+    );
     return run;
   }
   async function bulkImport(text: string, assignedOwner: string | null) {
-    const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-    const batches = Array.from({ length: Math.ceil(lines.length / 500) }, (_, i) => lines.slice(i * 500, (i + 1) * 500).join('\n'));
+    const lines = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const batches = Array.from({ length: Math.ceil(lines.length / 500) }, (_, i) => lines.slice(i * 500, (i + 1) * 500).join("\n"));
     if (!batches.length) return false;
     setNotice(`Đang nhập batch 1/${batches.length}…`);
     for (let i = 0; i < batches.length; i++) {
-      const ok = await mutation({ action: 'import', data: batches[i], ...(isAdmin ? { ownerId: assignedOwner } : {}) }, `Đã nhập batch ${i + 1}/${batches.length}`, true);
+      const ok = await mutation(
+        {
+          action: "import",
+          data: batches[i],
+          ...(isAdmin ? { ownerId: assignedOwner } : {}),
+        },
+        `Đã nhập batch ${i + 1}/${batches.length}`,
+        true,
+      );
       if (!ok) return false;
       if (i + 1 < batches.length) setNotice(`Đang nhập batch ${i + 2}/${batches.length}…`);
     }
-    setModal(null); setNotice(`Đã nhập ${lines.length} dòng dữ liệu`); return true;
+    setModal(null);
+    setNotice(`Đã nhập ${lines.length} dòng dữ liệu`);
+    return true;
   }
-  async function openKey(id: string, mode: Modal = 'detail') {
-    setError('');
+  function queueWithdrawalSave(usage: Usage, value: string, delay = 700) {
+    setWithdrawals((current) => ({ ...current, [usage.id]: value }));
+    const previous = withdrawalTimers.current.get(usage.id);
+    if (previous) clearTimeout(previous);
+    withdrawalTimers.current.set(
+      usage.id,
+      setTimeout(() => {
+        withdrawalTimers.current.delete(usage.id);
+        void mutation({ action: "withdraw", usageId: usage.id, withdrawal: value }, "Đã tự động lưu Rút", true);
+      }, delay),
+    );
+  }
+  useEffect(
+    () => () => {
+      withdrawalTimers.current.forEach((timer) => clearTimeout(timer));
+      withdrawalTimers.current.clear();
+    },
+    [],
+  );
+  async function openKey(id: string, mode: Modal = "detail") {
+    setError("");
     try {
-      const r = await fetch(`/api/keys/${id}`, { cache: 'no-store' }); const result = await r.json(); if (!r.ok) throw new Error(result.error);
-      setDetail(result); setFields(result.fields); setWithdrawals(Object.fromEntries(result.usages.map((u: Usage) => [u.id, u.withdrawal]))); setModal(mode);
-    } catch (err) { setError((err as Error).message); }
+      const r = await fetch(`/api/keys/${id}`, { cache: "no-store" });
+      const result = await r.json();
+      if (!r.ok) throw new Error(result.error);
+      setDetail(result);
+      setFields(result.fields);
+      setWithdrawals(Object.fromEntries(result.usages.map((u: Usage) => [u.id, u.withdrawal])));
+      setModal(mode);
+    } catch (err) {
+      setError((err as Error).message);
+    }
   }
-  function switchView(next: string) { setView(next); setPage(1); setSearch(''); setFilter(''); setArchived(false); setData(null); setNotice(''); }
-  function open(next: Modal) { setPaste(''); setOwnerId(''); setError(''); setEditingPlatformId(''); setEditingWorkerId(''); setPlatformId(data?.platforms.find(p => p.active)?.id ?? ''); setModal(next); }
-  const locked = data?.settlement && data.settlement.status !== 'OPEN';
-  const activePlatforms = data?.platforms.filter(p => p.active) ?? [];
-  const available = data?.eligible?.[platformId] ?? 0, shortage = Math.max(0, count - available);
-  const keys = data?.keys ?? [], allSelected = keys.length > 0 && keys.every(k => selected.includes(k.id));
-  const nav = isAdmin ? [{ id: 'data', icon: Database }, { id: 'settlements', icon: ListChecks }] : [{ id: 'today', icon: CalendarDays }, { id: 'inventory', icon: KeyRound }, { id: 'summary', icon: ChartNoAxesCombined }];
-  const toggle = (id: string) => setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
-  return <div className="shell"><aside className="sidebar"><div className="brand"><Sprout size={28} />CAY G<span className="brand-dot" /></div><div className="nav-caption">{isAdmin ? 'QUẢN TRỊ' : 'KHÔNG GIAN LÀM VIỆC'}</div><nav>{nav.map(n => <button key={n.id} className={view === n.id ? 'active' : ''} onClick={() => switchView(n.id)}><n.icon size={19} />{titles[n.id]}{view === n.id && <span className="nav-indicator" />}</button>)}</nav><div className="sidebar-bottom"><div className="user-avatar">{user.name.charAt(0)}</div><div><strong>{user.name}</strong><small>{user.role === 'CTV_CON' ? 'CTV con' : user.role}</small></div><button className="icon" aria-label="Đổi tài khoản và mật khẩu" onClick={() => open('account')}><KeyRound size={17} /></button><button className="icon" aria-label="Đăng xuất" onClick={async () => { const r = await fetch('/api/auth/logout', { method: 'POST' }); if (r.ok) window.location.assign('/login'); else setError('Không thể đăng xuất'); }}><LogOut size={17} /></button></div></aside>
-    <div className="main"><header className="topbar"><span>Không gian làm việc <span className="slash">/</span> <strong>{titles[view]}</strong></span><span className="live"><span /> {syncState === 'syncing' ? 'Đang lưu…' : loading ? 'Đang đồng bộ…' : error ? 'Cần kiểm tra' : data ? 'Đã đồng bộ' : 'Đang kết nối'}</span></header><main className="content"><div className="page-heading"><div><div className="eyebrow">{isAdmin ? 'QUẢN LÝ VẬN HÀNH' : 'CAY G / WORKSPACE'}</div><h1>{titles[view]}</h1></div><div className="actions">{['today', 'summary', 'settlements'].includes(view) && <label className="date-control"><CalendarDays size={16} /><input aria-label="Ngày" type="date" value={date} max={today()} onChange={e => { if (e.target.value) { setDate(e.target.value); setPage(1); } }} /></label>}{view === 'today' && <button className="primary" disabled={!!locked || date !== today() || !data} onClick={() => open('start')}><Plus size={18} />Làm nền tảng</button>}{['inventory', 'data'].includes(view) && <button className="primary" onClick={() => open('import')}><Plus size={18} />{isAdmin ? 'Nhập Data' : 'Thêm Key'}</button>}{view === 'summary' && <button className="primary" disabled={busy || !!locked || !data} onClick={() => { if (confirm('Chốt ngày? Sau khi chốt, dữ liệu ngày này không thể sửa.')) void mutation({ action: 'close', date }, 'Đã chốt ngày'); }}><LockKeyhole size={17} />Chốt ngày</button>}</div></div>
-    {error && !modal && <div className="error" role="alert">{error}</div>}{notice && <div className="notice" role="status"><Check size={17} />{notice}</div>}
-    {!isAdmin && data?.totals && <div className="metrics">{[['Nạp', data.totals.deposit], ['Rút', data.totals.withdrawal], ['Phí', data.totals.fee], ['Lãi/Lỗ', data.totals.profit], ['Nhận được', data.totals.payout]].map(([name, value]) => <div key={name} className={name === 'Nhận được' ? 'metric highlight' : 'metric'}><span>{name}{name === 'Nhận được' && <ArrowUpRight size={16} />}</span><strong className={Number(value) < 0 ? 'negative' : ''}>{money(value)}</strong>{name === 'Nhận được' && Number(data.totals?.childCommission) !== 0 && <small>Gồm HH con: {money(data.totals?.childCommission)}</small>}</div>)}</div>}
-    {view === 'summary' && data && <div className="summary-strip"><span>Chưa hoàn thành <strong>{data.totals?.incomplete ?? 0}</strong></span><span>Trạng thái ngày <Badge status={data.settlement?.status ?? 'OPEN'} /></span></div>}
-    {locked && ['today', 'summary'].includes(view) && <div className="locked-note"><LockKeyhole size={16} />Ngày đã {data?.settlement?.status}. Dữ liệu được khóa.</div>}
-    <section className="table-panel"><div className="table-toolbar"><div className="table-title">{({ today: 'Danh sách hôm nay', inventory: 'Tất cả Key', summary: 'Chi tiết trong ngày', data: 'Danh sách Data', settlements: 'Đối soát trong ngày' } as Record<string, string>)[view]}<span className="count">{data?.total ?? 0}</span></div><div className="actions">{isAdmin && view === 'data' && <><button className="subtle" onClick={() => open('worker')}><Users size={16} />Quản lý CTV</button><button className="subtle" onClick={() => open('platform')}><Plus size={16} />Platform</button></>}{isAdmin && <select aria-label="Lọc người nhận" value={filter} onChange={e => { setFilter(e.target.value); setPage(1); }}><option value="">Tất cả người nhận</option>{view === 'data' && <option value="unassigned">Chưa giao</option>}{data?.workers.map(w => <option key={w.id} value={w.id}>{w.name} · {w.role}</option>)}</select>}{['inventory', 'data'].includes(view) && <label className="check-label"><input type="checkbox" checked={archived} onChange={e => { setArchived(e.target.checked); setPage(1); }} />Đã lưu trữ</label>}{view !== 'settlements' && <label className="search"><Search size={16} /><input aria-label="Tìm kiếm" placeholder="Tìm tên, STK, ngân hàng…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} /></label>}<button className="icon" aria-label="Tải lại" onClick={() => void load()} disabled={loading}><RefreshCw size={16} className={loading ? 'spin' : ''} /></button></div></div>
-    {selected.length > 0 && <div className="selection"><span>Đã chọn <strong>{selected.length}</strong> Key</span><button onClick={async () => { try { const q = new URLSearchParams({ view, date, search, archived: String(archived), ownerId: filter, selection: 'true' }); const r = await fetch(`/api/workspace?${q}`); const result = await r.json(); if (!r.ok) throw new Error(result.error); setSelected(result.ids); } catch (err) { setError((err as Error).message); } }}>Chọn tất cả {data?.total} kết quả</button>{isAdmin && view === 'data' && <button onClick={() => open('assign')}>Giao Data</button>}<button className="danger-text" disabled={busy || (!!locked && view === 'today')} onClick={() => {
-      const action = view === 'today' ? 'removeToday' : 'deleteKeys';
-      if (confirm(view === 'today' ? 'Xóa khỏi hôm nay sẽ hủy các Platform đang làm; DONE và lịch sử được giữ lại. Tiếp tục?' : 'Key chưa dùng sẽ xóa vĩnh viễn. Key có lịch sử sẽ được lưu trữ. Tiếp tục?')) void mutation({ action, ids: selected, ...(action === 'removeToday' ? { date } : {}) }, 'Đã xử lý các Key được chọn');
-    }}><Trash2 size={15} />{view === 'today' ? 'Xóa khỏi hôm nay' : 'Xóa / lưu trữ'}</button><button className="subtle" onClick={() => setSelected([])}>Bỏ chọn</button></div>}
-    <div className="table-scroll" aria-busy={loading}><table><thead>{view === 'settlements' ? <tr><th>Người nhận</th><th className="number">Nạp</th><th className="number">Rút</th><th className="number">Phí</th><th className="number">Lãi/Lỗ</th><th className="number">Số tiền trả</th><th className="number">HH CTV cha</th><th>Trạng thái</th><th /></tr> : <tr>{view !== 'summary' && <th className="checkbox-cell"><input aria-label="Chọn tất cả trang này" type="checkbox" checked={allSelected} onChange={() => setSelected(allSelected ? [] : keys.map(k => k.id))} /></th>}<th>{view === 'inventory' ? 'Key' : 'Data / Key'}</th>{view === 'inventory' ? <><th>Đã dùng</th><th>Đang làm</th><th>Còn dùng được</th></> : view === 'data' ? <><th>Người nhận</th><th>Trạng thái</th></> : <><th>Platform</th><th className="number">Nạp</th><th className="number">Rút</th><th>Tiến độ</th></>}<th /><th /></tr>}</thead><tbody>
-      {view === 'settlements' ? data?.settlements?.map(s => <tr key={s.id}><td><strong>{s.worker.name}</strong><small>{s.worker.role}</small></td>{[s.deposit, s.withdrawal, s.fee, s.profit, s.payout, s.parentCommission].map((v, i) => <td key={i} className={`number ${i === 4 ? 'payout-cell' : ''}`}>{money(v)}</td>)}<td><Badge status={s.status} /></td><td>{s.status !== 'PAID' && <button className="row-action" disabled={busy} onClick={() => { const target = ({ OPEN: 'CLOSED', CLOSED: 'APPROVED', APPROVED: 'PAID' } as Record<string, string>)[s.status]; if (confirm(`${s.worker.name}: chuyển sang ${target}? Số tiền trả: ${money(s.payout)}`)) void mutation({ action: 'transition', settlementId: s.id, target }, `Đã chuyển sang ${target}`); }}>{({ OPEN: 'Chốt', CLOSED: 'Duyệt', APPROVED: 'Đã trả' } as Record<string, string>)[s.status]}</button>}</td></tr>) : keys.map(k => {
-        const usages = k.usages.filter(u => u.settlement.date === date), done = usages.filter(u => u.status === 'DONE').length;
-        const completed = k.usages.filter(u => u.status === 'DONE'), active = k.usages.filter(u => u.status === 'ACTIVE'), eligible = data?.platforms.filter(p => !k.usages.some(u => u.platformId === p.id)) ?? [];
-        const names = (list: Usage[]) => list.map(u => data?.platforms.find(p => p.id === u.platformId)?.name ?? 'Platform').join(', ');
-        return <tr key={k.id} className={selected.includes(k.id) ? 'selected' : ''}>{view !== 'summary' && <td className="checkbox-cell"><input aria-label={`Chọn ${k.normalizedStk}`} type="checkbox" checked={selected.includes(k.id)} onChange={() => toggle(k.id)} /></td>}<td><strong>{k.fullName}</strong><small className="mono">{k.normalizedStk}<span className="separator">·</span>{k.bank}</small></td>{view === 'inventory' ? <><td><span className="platform-list" title={names(completed)}>{completed.length ? names(completed) : '—'}</span></td><td><span className="platform-list" title={names(active)}>{active.length ? names(active) : '—'}</span></td><td><span className="eligible-count">{k.archived ? 0 : eligible.length}</span><small className="platform-list">{!k.archived && eligible.map(p => p.name).join(', ')}</small></td></> : view === 'data' ? <><td>{k.owner?.name ?? <span className="muted">Chưa giao</span>}{k.owner && <small>{k.owner.role}</small>}</td><td>{k.archived ? <Badge status="ARCHIVED" /> : active.length ? <Badge status="ACTIVE" /> : completed.length ? <Badge status="DONE" /> : <span className="badge">Sẵn sàng</span>}</td></> : <><td><div className="platform-tags">{usages.length ? usages.map(u => <span key={u.id}>{data?.platforms.find(p => p.id === u.platformId)?.name}</span>) : <span className="muted">Chưa có Platform</span>}</div></td><td className="number">{money(k.depositTotal)}</td><td className="number">{money(k.withdrawalTotal)}</td><td>{usages.length ? <div className="progress-cell"><span>{done}/{usages.length}</span><div className="progress"><i style={{ width: `${done / usages.length * 100}%` }} /></div></div> : <span className="muted">—</span>}</td></>}<td><button className="row-action" onClick={() => void openKey(k.id)}>{['today', 'summary'].includes(view) ? 'Mở / Nhập Rút' : 'Mở'}<ArrowUpRight size={14} /></button></td><td><button className="icon" aria-label={`Sửa ${k.normalizedStk}`} disabled={k.archived} onClick={() => void openKey(k.id, 'edit')}><Pencil size={15} /></button></td></tr>;
-      })}
-      {!loading && (data?.total ?? 0) === 0 && <tr><td colSpan={10}><div className="empty"><KeyRound size={30} /><strong>Chưa có {view === 'settlements' ? 'đối soát' : 'dữ liệu'}</strong><span>{search || filter ? 'Thử thay đổi bộ lọc.' : view === 'today' ? 'Chọn Làm nền tảng để bắt đầu.' : 'Dữ liệu sẽ xuất hiện tại đây.'}</span></div></td></tr>}
-      {loading && !data && <tr><td colSpan={10}><div className="empty">Đang tải dữ liệu…</div></td></tr>}
-    </tbody></table></div><footer className="table-footer"><span>{data?.total ? `${(page - 1) * 50 + 1}–${Math.min(page * 50, data.total)} / ${data.total}` : '0 kết quả'}{view !== 'settlements' && ' · Mỗi Data một dòng'}</span><div className="actions"><button className="icon" aria-label="Trang trước" disabled={page === 1 || loading} onClick={() => setPage(p => p - 1)}><ChevronLeft size={17} /></button><span>Trang {page}</span><button className="icon" aria-label="Trang sau" disabled={page * 50 >= (data?.total ?? 0) || loading} onClick={() => setPage(p => p + 1)}><ChevronRight size={17} /></button></div></footer></section>
-    <footer className="page-footer"><span>CAY G</span><span>{isAdmin ? 'Data → Đối soát' : 'Hôm nay → Kho Key → Tổng kết'}</span></footer></main></div>
-    {modal && <Dialog title={({ start: 'Làm nền tảng', import: isAdmin ? 'Nhập Data' : 'Thêm Key vào kho', detail: 'Data / Key', edit: 'Sửa Key', platform: 'Quản lý Platform', worker: 'Thêm CTV', assign: 'Giao Data', account: 'Đổi tài khoản và mật khẩu' } as Record<string, string>)[modal]} close={() => setModal(null)} busy={busy}>{error && <div className="error dialog-error" role="alert">{error}</div>}
-      {modal === 'account' && <form onSubmit={async e => { e.preventDefault(); setBusy(true); setError(''); const body = Object.fromEntries(new FormData(e.currentTarget)); try { const r = await fetch('/api/auth/account', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const result = await r.json(); if (!r.ok) throw new Error(result.error); window.location.assign('/login'); } catch (err) { setError((err as Error).message); setBusy(false); } }}><div className="dialog-body"><label>Email đăng nhập<input name="email" type="email" defaultValue={user.email} maxLength={200} required autoComplete="username" /></label><label>Mật khẩu hiện tại<input name="currentPassword" type="password" maxLength={200} required autoComplete="current-password" /></label><label>Mật khẩu mới<input name="newPassword" type="password" minLength={12} maxLength={200} required autoComplete="new-password" /></label><label>Nhập lại mật khẩu mới<input name="confirmPassword" type="password" minLength={12} maxLength={200} required autoComplete="new-password" /></label><small>Sau khi đổi, tất cả phiên đăng nhập sẽ bị thu hồi.</small></div><div className="dialog-footer"><button type="button" onClick={() => setModal(null)} disabled={busy}>Hủy</button><button className="primary" disabled={busy}>{busy ? 'Đang đổi…' : 'Đổi tài khoản'}</button></div></form>}
-      {modal === 'start' && <form onSubmit={e => { e.preventDefault(); void mutation({ action: 'start', date, platformId, count, deposit, data: paste }, `Đã bắt đầu ${count} Key`); }}><div className="dialog-body"><label>Platform<select aria-label="Platform" required value={platformId} onChange={e => setPlatformId(e.target.value)}>{data?.platforms.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label>Số Key<input type="number" min="1" max="500" required value={count} onChange={e => setCount(Number(e.target.value))} /></label><label>Nạp/Key<div className="segmented">{['100', '300', 'Khác'].map(v => <button type="button" key={v} className={depositMode === v ? 'chosen' : ''} onClick={() => { setDepositMode(v); if (v !== 'Khác') setDeposit(v); }}>{v}</button>)}</div>{depositMode === 'Khác' && <input aria-label="Nạp/Key khác" type="number" min="0.01" step="0.01" max="9999999999" required value={deposit} onChange={e => setDeposit(e.target.value)} />}</label><div className="availability"><span>Key có sẵn: <strong>{available}</strong></span><span className={shortage ? 'negative' : ''}>Thiếu: <strong>{shortage}</strong></span></div>{shortage > 0 && <label>Data bổ sung<textarea required rows={6} placeholder="Họ tên|STK|Ngân hàng" value={paste} onChange={e => setPaste(e.target.value)} /><small>Phần thừa được lưu vào Kho Key. Tối đa 500 dòng.</small></label>}</div><div className="dialog-footer"><button type="button" onClick={() => setModal(null)} disabled={busy}>Hủy</button><button className="primary" disabled={busy || !platformId}>{busy ? 'Đang xử lý…' : 'Bắt đầu'}</button></div></form>}
-      {modal === 'import' && <form onSubmit={e => { e.preventDefault(); void bulkImport(paste, ownerId || null); }}><div className="dialog-body">{isAdmin && <label>Giao trực tiếp<select value={ownerId} onChange={e => setOwnerId(e.target.value)}><option value="">Chưa giao</option>{data?.workers.map(w => <option key={w.id} value={w.id}>{w.name} · {w.role}</option>)}</select></label>}<label>Data / Key<textarea autoFocus required rows={9} placeholder={'Họ tên|STK|Ngân hàng\nhoặc Key đúng 10 field'} value={paste} onChange={e => setPaste(e.target.value)} /><small>Họ tên|STK|Ngân hàng|Chi nhánh|Tài khoản|Mật khẩu|PIN rút|SĐT|Email|Ngày sinh</small></label><label className="file-input"><Upload size={16} />Nhập file TXT / CSV (phân cách |)<input type="file" accept=".txt,.csv" onChange={async e => { const f = e.target.files?.[0]; if (f) { if (f.size > 200000) setError('File tối đa 200 KB'); else setPaste(await f.text()); } }} /></label></div><div className="dialog-footer"><button type="button" onClick={() => setModal(null)} disabled={busy}>Hủy</button><button className="primary" disabled={busy}>{busy ? 'Đang nhập…' : 'Nhập dữ liệu'}</button></div></form>}
-      {modal === 'assign' && <form onSubmit={e => { e.preventDefault(); void mutation({ action: 'assign', ids: selected, ownerId }, 'Đã giao Data'); }}><div className="dialog-body"><p>Giao {selected.length} Data đã chọn</p><label>Người nhận<select required value={ownerId} onChange={e => setOwnerId(e.target.value)}><option value="">Chọn CTV / CTV con</option>{data?.workers.map(w => <option key={w.id} value={w.id}>{w.name} · {w.role}</option>)}</select></label></div><div className="dialog-footer"><button className="primary" disabled={busy}>Giao Data</button></div></form>}
-      {modal === 'detail' && detail && <><div className="dialog-body"><div className="detail-title"><div><h3>{detail.fields[0]}</h3><span className="mono muted">{detail.fields[1]} · {detail.fields[2]}</span></div><button className="subtle" onClick={async () => { try { await navigator.clipboard.writeText(detail.fields.join('|')); setNotice('Đã sao chép Key 10 field'); } catch { setError('Không thể sao chép; mở Sửa để xem field'); } }}><Copy size={16} />Copy Key</button></div><div className="withdraw-list"><div className="withdraw-head"><span>Platform / Ngày</span><span>Nạp</span><span>Rút</span><span>Trạng thái</span><span /></div>{detail.usages.length === 0 && <p className="muted">Key chưa chạy Platform nào.</p>}{detail.usages.map(u => <form key={u.id} onSubmit={async e => { e.preventDefault(); if (await mutation({ action: 'withdraw', usageId: u.id, withdrawal: withdrawals[u.id] }, 'Đã lưu Rút', true)) await openKey(detail.id); }} className="withdraw-row"><div><strong>{u.platform?.name}</strong><small>{u.settlement.date}</small></div><span>{money(u.deposit)}</span><input aria-label={`Rút ${u.platform?.name}`} type="number" min="0" max="9999999999" step="0.01" required disabled={isAdmin || u.settlement.status !== 'OPEN' || u.status === 'CANCELLED'} value={withdrawals[u.id] ?? '0'} onChange={e => setWithdrawals(s => ({ ...s, [u.id]: e.target.value }))} /><Badge status={u.status} />{!isAdmin && u.settlement.status === 'OPEN' && u.status !== 'CANCELLED' ? <button className="primary compact" disabled={busy}>{u.status === 'DONE' ? 'Lưu' : 'Hoàn thành'}</button> : <LockKeyhole size={16} />}</form>)}</div></div><div className="dialog-footer"><button onClick={() => setModal('edit')}>Sửa Key</button><button onClick={() => setModal(null)}>Đóng</button></div></>}
-      {modal === 'edit' && detail && <form onSubmit={e => { e.preventDefault(); void mutation({ action: 'editKey', id: detail.id, data: fields.join('|') }, 'Đã lưu Key'); }}><div className="dialog-body field-grid">{fieldNames.map((name, i) => <label key={name}>{name}<input required={i < 3} readOnly={i === 1} maxLength={250} value={fields[i] ?? ''} type={[5, 6].includes(i) ? 'password' : 'text'} onChange={e => setFields(f => f.map((v, idx) => idx === i ? e.target.value : v))} /></label>)}</div><div className="dialog-footer"><button type="button" onClick={() => setModal(null)}>Hủy</button><button className="primary" disabled={busy}>Lưu Key</button></div></form>}
-      {modal === 'platform' && <div><div className="dialog-body"><div className="platform-manager-head"><div><strong>Platform hiện có</strong><small>{activePlatforms.length} đang hoạt động · {(data?.platforms.length ?? 0) - activePlatforms.length} đã ngừng</small></div></div><div className="platform-manager">{data?.platforms.length ? data.platforms.map(p => <div className="platform-manager-row" key={p.id}>{editingPlatformId === p.id ? <form className="platform-edit" onSubmit={async e => { e.preventDefault(); if (await mutation({ action: 'platformRename', id: p.id, name: platformDraft }, 'Đã đổi tên Platform', true)) setEditingPlatformId(''); }}><input aria-label={`Tên mới ${p.name}`} value={platformDraft} onChange={e => setPlatformDraft(e.target.value)} maxLength={80} required autoFocus /><button className="primary compact" disabled={busy}>Lưu</button><button type="button" className="compact" onClick={() => setEditingPlatformId('')}>Hủy</button></form> : <><div className="platform-manager-name"><strong>{p.name}</strong><span className={`badge ${p.active ? 'done' : 'cancelled'}`}>{p.active ? 'Đang hoạt động' : 'Đã ngừng'}</span></div><div className="actions"><button className="icon" aria-label={`Sửa Platform ${p.name}`} disabled={busy} onClick={() => { setEditingPlatformId(p.id); setPlatformDraft(p.name); }}><Pencil size={15} /></button>{p.active && <button className="icon danger-text" aria-label={`Xóa Platform ${p.name}`} disabled={busy} onClick={() => { if (confirm(`Xóa Platform ${p.name}? Platform đã có lịch sử sẽ được ngừng sử dụng và vẫn giữ dữ liệu cũ.`)) void mutation({ action: 'platformDelete', id: p.id }, 'Đã xóa/ngừng Platform', true); }}><Trash2 size={15} /></button>}</div></>}</div>) : <div className="empty compact-empty">Chưa có Platform</div>}</div><form className="platform-create" onSubmit={e => { e.preventDefault(); const form = e.currentTarget; const f = new FormData(form); void mutation({ action: 'platform', name: f.get('name') }, 'Đã thêm Platform; Key chưa dùng tự đủ điều kiện', true).then(ok => { if (ok) form.reset(); }); }}><label>Tên Platform mới<input name="name" required maxLength={80} placeholder="Ví dụ: Platform A" /></label><button className="primary" disabled={busy}><Plus size={16} />Thêm Platform</button></form></div><div className="dialog-footer"><button onClick={() => setModal(null)}>Đóng</button></div></div>}
-      {modal === 'worker' && <><div className="dialog-body">{data?.workers.map(w => <div className="platform-manager-row" key={w.id}><div><strong>{w.name}</strong><small>{w.email} · {w.role === 'CTV_CON' ? 'CTV con' : 'CTV'}</small></div><div className="actions"><button className="icon" onClick={() => { setEditingWorkerId(w.id); setWorkerRole(w.role); }}><Pencil size={15} /></button><button className="icon danger-text" onClick={() => { if (confirm(`Vô hiệu hóa ${w.name}? Lịch sử vẫn được giữ.`)) void mutation({ action: 'workerDisable', id: w.id }, 'Đã vô hiệu hóa tài khoản', true); }}><Trash2 size={15} /></button></div></div>)}<form onSubmit={e => { e.preventDefault(); const f = new FormData(e.currentTarget); void mutation({ action: editingWorkerId ? 'workerUpdate' : 'worker', ...(editingWorkerId ? { id: editingWorkerId } : {}), name: f.get('name'), email: f.get('email'), password: f.get('password') || undefined, role: workerRole, parentCtvId: workerRole === 'CTV_CON' ? f.get('parentCtvId') : null }, editingWorkerId ? 'Đã cập nhật CTV' : 'Đã tạo tài khoản CTV', true).then(ok => { if (ok) { setEditingWorkerId(''); (e.currentTarget as HTMLFormElement).reset(); } }); }}><label>Họ tên<input name="name" defaultValue={editingWorkerId ? data?.workers.find(w => w.id === editingWorkerId)?.name : ''} maxLength={100} required /></label><label>Email<input name="email" type="email" defaultValue={editingWorkerId ? data?.workers.find(w => w.id === editingWorkerId)?.email : ''} maxLength={200} required /></label><label>Mật khẩu {editingWorkerId && <small>(để trống nếu không đổi)</small>}<input name="password" type="password" minLength={editingWorkerId ? 0 : 12} maxLength={200} autoComplete="new-password" required={!editingWorkerId} /></label><label>Vai trò<select value={workerRole} onChange={e => setWorkerRole(e.target.value)}><option value="CTV">CTV</option><option value="CTV_CON">CTV con</option></select></label>{workerRole === 'CTV_CON' && <label>CTV cha<select name="parentCtvId" required>{data?.workers.filter(w => w.role === 'CTV' && w.id !== editingWorkerId).map(w => <option key={w.id} value={w.id}>{w.name}</option>)}</select></label>}<div className="dialog-footer"><button type="button" onClick={() => { setEditingWorkerId(''); setModal(null); }}>Đóng</button><button className="primary" disabled={busy}>{editingWorkerId ? 'Lưu thay đổi' : 'Tạo tài khoản'}</button></div></form></div></>}
-    </Dialog>}
-  </div>;
+  function switchView(next: string) {
+    setView(next);
+    setPage(1);
+    setSearch("");
+    setFilter("");
+    setArchived(false);
+    setData(null);
+    setNotice("");
+  }
+  function open(next: Modal) {
+    setPaste("");
+    setOwnerId("");
+    setError("");
+    setEditingPlatformId("");
+    setEditingWorkerId("");
+    setPlatformId(data?.platforms.find((p) => p.active)?.id ?? "");
+    setModal(next);
+  }
+  const locked = data?.settlement && data.settlement.status !== "OPEN";
+  const activePlatforms = data?.platforms.filter((p) => p.active) ?? [];
+  const available = data?.eligible?.[platformId] ?? 0,
+    shortage = Math.max(0, count - available);
+  const keys = data?.keys ?? [],
+    allSelected = keys.length > 0 && keys.every((k) => selected.includes(k.id));
+  const nav = isAdmin
+    ? [
+        { id: "data", icon: Database },
+        { id: "settlements", icon: ListChecks },
+      ]
+    : [
+        { id: "today", icon: CalendarDays },
+        { id: "inventory", icon: KeyRound },
+        { id: "summary", icon: ChartNoAxesCombined },
+      ];
+  const toggle = (id: string) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  return (
+    <div className="shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <Sprout size={28} />
+          CAY G<span className="brand-dot" />
+        </div>
+        <div className="nav-caption">{isAdmin ? "QUẢN TRỊ" : "KHÔNG GIAN LÀM VIỆC"}</div>
+        <nav>
+          {nav.map((n) => (
+            <button key={n.id} className={view === n.id ? "active" : ""} onClick={() => switchView(n.id)}>
+              <n.icon size={19} />
+              {titles[n.id]}
+              {view === n.id && <span className="nav-indicator" />}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-bottom">
+          <div className="user-avatar">{user.name.charAt(0)}</div>
+          <div>
+            <strong>{user.name}</strong>
+            <small>{user.role === "CTV_CON" ? "CTV con" : user.role}</small>
+          </div>
+          <button className="icon" aria-label="Đổi tài khoản và mật khẩu" onClick={() => open("account")}>
+            <KeyRound size={17} />
+          </button>
+          <button
+            className="icon"
+            aria-label="Đăng xuất"
+            onClick={async () => {
+              const r = await fetch("/api/auth/logout", { method: "POST" });
+              if (r.ok) window.location.assign("/login");
+              else setError("Không thể đăng xuất");
+            }}
+          >
+            <LogOut size={17} />
+          </button>
+        </div>
+      </aside>
+      <div className="main">
+        <header className="topbar">
+          <span>
+            Không gian làm việc <span className="slash">/</span> <strong>{titles[view]}</strong>
+          </span>
+          <span className="live">
+            <span /> {syncState === "syncing" ? "Đang lưu…" : loading ? "Đang đồng bộ…" : error ? "Cần kiểm tra" : data ? "Đã đồng bộ" : "Đang kết nối"}
+          </span>
+        </header>
+        <main className="content">
+          <div className="page-heading">
+            <div>
+              <div className="eyebrow">{isAdmin ? "QUẢN LÝ VẬN HÀNH" : "CAY G / WORKSPACE"}</div>
+              <h1>{titles[view]}</h1>
+            </div>
+            <div className="actions">
+              {["today", "summary", "settlements"].includes(view) && (
+                <label className="date-control">
+                  <CalendarDays size={16} />
+                  <input
+                    aria-label="Ngày"
+                    type="date"
+                    value={date}
+                    max={today()}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        setDate(e.target.value);
+                        setPage(1);
+                      }
+                    }}
+                  />
+                </label>
+              )}
+              {view === "today" && (
+                <button className="primary" disabled={!!locked || date !== today() || !data} onClick={() => open("start")}>
+                  <Plus size={18} />
+                  Làm nền tảng
+                </button>
+              )}
+              {["inventory", "data"].includes(view) && (
+                <button className="primary" onClick={() => open("import")}>
+                  <Plus size={18} />
+                  {isAdmin ? "Nhập Data" : "Thêm Key"}
+                </button>
+              )}
+              {view === "summary" && (
+                <button
+                  className="primary"
+                  disabled={busy || !!locked || !data}
+                  onClick={() => {
+                    if (confirm("Chốt ngày? Sau khi chốt, dữ liệu ngày này không thể sửa.")) void mutation({ action: "close", date }, "Đã chốt ngày");
+                  }}
+                >
+                  <LockKeyhole size={17} />
+                  Chốt ngày
+                </button>
+              )}
+            </div>
+          </div>
+          {error && !modal && (
+            <div className="error" role="alert">
+              {error}
+            </div>
+          )}
+          {notice && (
+            <div className="notice" role="status">
+              <Check size={17} />
+              {notice}
+            </div>
+          )}
+          {!isAdmin && data?.totals && (
+            <div className="metrics">
+              {[
+                ["Nạp", data.totals.deposit],
+                ["Rút", data.totals.withdrawal],
+                ["Phí", data.totals.fee],
+                ["Lãi/Lỗ", data.totals.profit],
+                ["Nhận được", data.totals.payout],
+              ].map(([name, value]) => (
+                <div key={name} className={name === "Nhận được" ? "metric highlight" : "metric"}>
+                  <span>
+                    {name}
+                    {name === "Nhận được" && <ArrowUpRight size={16} />}
+                  </span>
+                  <strong className={Number(value) < 0 ? "negative" : ""}>{money(value)}</strong>
+                  {name === "Nhận được" && Number(data.totals?.childCommission) !== 0 && <small>Gồm HH con: {money(data.totals?.childCommission)}</small>}
+                </div>
+              ))}
+            </div>
+          )}
+          {view === "summary" && data && (
+            <div className="summary-strip">
+              <span>
+                Chưa hoàn thành <strong>{data.totals?.incomplete ?? 0}</strong>
+              </span>
+              <span>
+                Trạng thái ngày <Badge status={data.settlement?.status ?? "OPEN"} />
+              </span>
+            </div>
+          )}
+          {locked && ["today", "summary"].includes(view) && (
+            <div className="locked-note">
+              <LockKeyhole size={16} />
+              Ngày đã {data?.settlement?.status}. Dữ liệu được khóa.
+            </div>
+          )}
+          <section className="table-panel">
+            <div className="table-toolbar">
+              <div className="table-title">
+                {
+                  (
+                    {
+                      today: "Danh sách hôm nay",
+                      inventory: "Tất cả Key",
+                      summary: "Chi tiết trong ngày",
+                      data: "Danh sách Data",
+                      settlements: "Đối soát trong ngày",
+                    } as Record<string, string>
+                  )[view]
+                }
+                <span className="count">{data?.total ?? 0}</span>
+              </div>
+              <div className="actions">
+                {isAdmin && view === "data" && (
+                  <>
+                    <button className="subtle" onClick={() => open("worker")}>
+                      <Users size={16} />
+                      Quản lý CTV
+                    </button>
+                    <button className="subtle" onClick={() => open("platform")}>
+                      <Plus size={16} />
+                      Platform
+                    </button>
+                  </>
+                )}
+                {isAdmin && (
+                  <select
+                    aria-label="Lọc người nhận"
+                    value={filter}
+                    onChange={(e) => {
+                      setFilter(e.target.value);
+                      setPage(1);
+                    }}
+                  >
+                    <option value="">Tất cả người nhận</option>
+                    {view === "data" && <option value="unassigned">Chưa giao</option>}
+                    {data?.workers.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name} · {w.role}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {["inventory", "data"].includes(view) && (
+                  <label className="check-label">
+                    <input
+                      type="checkbox"
+                      checked={archived}
+                      onChange={(e) => {
+                        setArchived(e.target.checked);
+                        setPage(1);
+                      }}
+                    />
+                    Đã lưu trữ
+                  </label>
+                )}
+                {view !== "settlements" && (
+                  <label className="search">
+                    <Search size={16} />
+                    <input
+                      aria-label="Tìm kiếm"
+                      placeholder="Tìm tên, STK, ngân hàng…"
+                      value={search}
+                      onChange={(e) => {
+                        setSearch(e.target.value);
+                        setPage(1);
+                      }}
+                    />
+                  </label>
+                )}
+                <button className="icon" aria-label="Tải lại" onClick={() => void load()} disabled={loading}>
+                  <RefreshCw size={16} className={loading ? "spin" : ""} />
+                </button>
+              </div>
+            </div>
+            {selected.length > 0 && (
+              <div className="selection">
+                <span>
+                  Đã chọn <strong>{selected.length}</strong> Key
+                </span>
+                <button
+                  onClick={async () => {
+                    try {
+                      const q = new URLSearchParams({
+                        view,
+                        date,
+                        search,
+                        archived: String(archived),
+                        ownerId: filter,
+                        selection: "true",
+                      });
+                      const r = await fetch(`/api/workspace?${q}`);
+                      const result = await r.json();
+                      if (!r.ok) throw new Error(result.error);
+                      setSelected(result.ids);
+                    } catch (err) {
+                      setError((err as Error).message);
+                    }
+                  }}
+                >
+                  Chọn tất cả {data?.total} kết quả
+                </button>
+                {isAdmin && view === "data" && <button onClick={() => open("assign")}>Giao Data</button>}
+                <button
+                  className="danger-text"
+                  disabled={busy || (!!locked && view === "today")}
+                  onClick={() => {
+                    const action = view === "today" ? "removeToday" : "deleteKeys";
+                    if (confirm(view === "today" ? "Xóa khỏi hôm nay sẽ hủy các Platform đang làm; DONE và lịch sử được giữ lại. Tiếp tục?" : "Key chưa dùng sẽ xóa vĩnh viễn. Key có lịch sử sẽ được lưu trữ. Tiếp tục?"))
+                      void mutation(
+                        {
+                          action,
+                          ids: selected,
+                          ...(action === "removeToday" ? { date } : {}),
+                        },
+                        "Đã xử lý các Key được chọn",
+                      );
+                  }}
+                >
+                  <Trash2 size={15} />
+                  {view === "today" ? "Xóa khỏi hôm nay" : "Xóa / lưu trữ"}
+                </button>
+                <button className="subtle" onClick={() => setSelected([])}>
+                  Bỏ chọn
+                </button>
+              </div>
+            )}
+            <div className="table-scroll" aria-busy={loading}>
+              <table>
+                <thead>
+                  {view === "settlements" ? (
+                    <tr>
+                      <th>Người nhận</th>
+                      <th className="number">Nạp</th>
+                      <th className="number">Rút</th>
+                      <th className="number">Phí</th>
+                      <th className="number">Lãi/Lỗ</th>
+                      <th className="number">Số tiền trả</th>
+                      <th className="number">HH CTV cha</th>
+                      <th>Trạng thái</th>
+                      <th />
+                    </tr>
+                  ) : (
+                    <tr>
+                      {view !== "summary" && (
+                        <th className="checkbox-cell">
+                          <input aria-label="Chọn tất cả trang này" type="checkbox" checked={allSelected} onChange={() => setSelected(allSelected ? [] : keys.map((k) => k.id))} />
+                        </th>
+                      )}
+                      <th>{view === "inventory" ? "Key" : "Data / Key"}</th>
+                      {view === "inventory" ? (
+                        <>
+                          <th>Đã dùng</th>
+                          <th>Đang làm</th>
+                          <th>Còn dùng được</th>
+                        </>
+                      ) : view === "data" ? (
+                        <>
+                          <th>Người nhận</th>
+                          <th>Trạng thái</th>
+                        </>
+                      ) : (
+                        <>
+                          <th>Platform</th>
+                          <th className="number">Nạp</th>
+                          <th className="number">Rút</th>
+                          <th>Tiến độ</th>
+                        </>
+                      )}
+                      <th />
+                      <th />
+                    </tr>
+                  )}
+                </thead>
+                <tbody>
+                  {view === "settlements"
+                    ? data?.settlements?.map((s) => (
+                        <tr key={s.id}>
+                          <td>
+                            <strong>{s.worker.name}</strong>
+                            <small>{s.worker.role}</small>
+                          </td>
+                          {[s.deposit, s.withdrawal, s.fee, s.profit, s.payout, s.parentCommission].map((v, i) => (
+                            <td key={i} className={`number ${i === 4 ? "payout-cell" : ""}`}>
+                              {money(v)}
+                            </td>
+                          ))}
+                          <td>
+                            <Badge status={s.status} />
+                          </td>
+                          <td>
+                            {s.status !== "PAID" && (
+                              <button
+                                className="row-action"
+                                disabled={busy}
+                                onClick={() => {
+                                  const target = (
+                                    {
+                                      OPEN: "CLOSED",
+                                      CLOSED: "APPROVED",
+                                      APPROVED: "PAID",
+                                    } as Record<string, string>
+                                  )[s.status];
+                                  if (confirm(`${s.worker.name}: chuyển sang ${target}? Số tiền trả: ${money(s.payout)}`))
+                                    void mutation(
+                                      {
+                                        action: "transition",
+                                        settlementId: s.id,
+                                        target,
+                                      },
+                                      `Đã chuyển sang ${target}`,
+                                    );
+                                }}
+                              >
+                                {
+                                  (
+                                    {
+                                      OPEN: "Chốt",
+                                      CLOSED: "Duyệt",
+                                      APPROVED: "Đã trả",
+                                    } as Record<string, string>
+                                  )[s.status]
+                                }
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    : keys.map((k) => {
+                        const usages = k.usages.filter((u) => u.settlement.date === date),
+                          done = usages.filter((u) => u.status === "DONE").length;
+                        const completed = k.usages.filter((u) => u.status === "DONE"),
+                          active = k.usages.filter((u) => u.status === "ACTIVE"),
+                          eligible = data?.platforms.filter((p) => !k.usages.some((u) => u.platformId === p.id)) ?? [];
+                        const names = (list: Usage[]) => list.map((u) => data?.platforms.find((p) => p.id === u.platformId)?.name ?? "Platform").join(", ");
+                        return (
+                          <tr key={k.id} className={selected.includes(k.id) ? "selected" : ""}>
+                            {view !== "summary" && (
+                              <td className="checkbox-cell">
+                                <input aria-label={`Chọn ${k.normalizedStk}`} type="checkbox" checked={selected.includes(k.id)} onChange={() => toggle(k.id)} />
+                              </td>
+                            )}
+                            <td>
+                              <strong>{k.fullName}</strong>
+                              <small className="mono">
+                                {k.normalizedStk}
+                                <span className="separator">·</span>
+                                {k.bank}
+                              </small>
+                            </td>
+                            {view === "inventory" ? (
+                              <>
+                                <td>
+                                  <span className="platform-list" title={names(completed)}>
+                                    {completed.length ? names(completed) : "—"}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span className="platform-list" title={names(active)}>
+                                    {active.length ? names(active) : "—"}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span className="eligible-count">{k.archived ? 0 : eligible.length}</span>
+                                  <small className="platform-list">{!k.archived && eligible.map((p) => p.name).join(", ")}</small>
+                                </td>
+                              </>
+                            ) : view === "data" ? (
+                              <>
+                                <td>
+                                  {k.owner?.name ?? <span className="muted">Chưa giao</span>}
+                                  {k.owner && <small>{k.owner.role}</small>}
+                                </td>
+                                <td>{k.archived ? <Badge status="ARCHIVED" /> : active.length ? <Badge status="ACTIVE" /> : completed.length ? <Badge status="DONE" /> : <span className="badge">Sẵn sàng</span>}</td>
+                              </>
+                            ) : (
+                              <>
+                                <td>
+                                  <div className="platform-tags">{usages.length ? usages.map((u) => <span key={u.id}>{data?.platforms.find((p) => p.id === u.platformId)?.name}</span>) : <span className="muted">Chưa có Platform</span>}</div>
+                                </td>
+                                <td className="number">{money(k.depositTotal)}</td>
+                                <td className="number">
+                                  {view === "today" && usages.length ? (
+                                    <div className="sheet-withdrawals">
+                                      {usages.map((u) => (
+                                        <input
+                                          key={u.id}
+                                          className="sheet-input"
+                                          aria-label={`Rút ${data?.platforms.find((p) => p.id === u.platformId)?.name ?? "Platform"}`}
+                                          type="number"
+                                          min="0"
+                                          max="9999999999"
+                                          step="0.01"
+                                          disabled={u.settlement.status !== "OPEN" || u.status === "CANCELLED"}
+                                          value={withdrawals[u.id] ?? String(u.withdrawal)}
+                                          onChange={(e) => queueWithdrawalSave(u, e.target.value)}
+                                          onBlur={(e) => queueWithdrawalSave(u, e.target.value, 0)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === "Enter") e.currentTarget.blur();
+                                          }}
+                                        />
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    money(k.withdrawalTotal)
+                                  )}
+                                </td>
+                                <td>
+                                  {usages.length ? (
+                                    <div className="progress-cell">
+                                      <span>
+                                        {done}/{usages.length}
+                                      </span>
+                                      <div className="progress">
+                                        <i
+                                          style={{
+                                            width: `${(done / usages.length) * 100}%`,
+                                          }}
+                                        />
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <span className="muted">—</span>
+                                  )}
+                                </td>
+                              </>
+                            )}
+                            <td>
+                              <button className="row-action" onClick={() => void openKey(k.id)}>
+                                {["today", "summary"].includes(view) ? "Mở / Nhập Rút" : "Mở"}
+                                <ArrowUpRight size={14} />
+                              </button>
+                            </td>
+                            <td>
+                              <button className="icon" aria-label={`Sửa ${k.normalizedStk}`} disabled={k.archived} onClick={() => void openKey(k.id, "edit")}>
+                                <Pencil size={15} />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  {!loading && (data?.total ?? 0) === 0 && (
+                    <tr>
+                      <td colSpan={10}>
+                        <div className="empty">
+                          <KeyRound size={30} />
+                          <strong>Chưa có {view === "settlements" ? "đối soát" : "dữ liệu"}</strong>
+                          <span>{search || filter ? "Thử thay đổi bộ lọc." : view === "today" ? "Chọn Làm nền tảng để bắt đầu." : "Dữ liệu sẽ xuất hiện tại đây."}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  {loading && !data && (
+                    <tr>
+                      <td colSpan={10}>
+                        <div className="empty">Đang tải dữ liệu…</div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <footer className="table-footer">
+              <span>
+                {data?.total ? `${(page - 1) * 50 + 1}–${Math.min(page * 50, data.total)} / ${data.total}` : "0 kết quả"}
+                {view !== "settlements" && " · Mỗi Data một dòng"}
+              </span>
+              <div className="actions">
+                <button className="icon" aria-label="Trang trước" disabled={page === 1 || loading} onClick={() => setPage((p) => p - 1)}>
+                  <ChevronLeft size={17} />
+                </button>
+                <span>Trang {page}</span>
+                <button className="icon" aria-label="Trang sau" disabled={page * 50 >= (data?.total ?? 0) || loading} onClick={() => setPage((p) => p + 1)}>
+                  <ChevronRight size={17} />
+                </button>
+              </div>
+            </footer>
+          </section>
+          <footer className="page-footer">
+            <span>CAY G</span>
+            <span>{isAdmin ? "Data → Đối soát" : "Hôm nay → Kho Key → Tổng kết"}</span>
+          </footer>
+        </main>
+      </div>
+      {modal && (
+        <Dialog
+          title={
+            (
+              {
+                start: "Làm nền tảng",
+                import: isAdmin ? "Nhập Data" : "Thêm Key vào kho",
+                detail: "Data / Key",
+                edit: "Sửa Key",
+                platform: "Quản lý Platform",
+                worker: "Thêm CTV",
+                assign: "Giao Data",
+                account: "Đổi tài khoản và mật khẩu",
+              } as Record<string, string>
+            )[modal]
+          }
+          close={() => setModal(null)}
+          busy={busy}
+        >
+          {error && (
+            <div className="error dialog-error" role="alert">
+              {error}
+            </div>
+          )}
+          {modal === "account" && (
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setBusy(true);
+                setError("");
+                const body = Object.fromEntries(new FormData(e.currentTarget));
+                try {
+                  const r = await fetch("/api/auth/account", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body),
+                  });
+                  const result = await r.json();
+                  if (!r.ok) throw new Error(result.error);
+                  window.location.assign("/login");
+                } catch (err) {
+                  setError((err as Error).message);
+                  setBusy(false);
+                }
+              }}
+            >
+              <div className="dialog-body">
+                <label>
+                  Email đăng nhập
+                  <input name="email" type="email" defaultValue={user.email} maxLength={200} required autoComplete="username" />
+                </label>
+                <label>
+                  Mật khẩu hiện tại
+                  <input name="currentPassword" type="password" maxLength={200} required autoComplete="current-password" />
+                </label>
+                <label>
+                  Mật khẩu mới
+                  <input name="newPassword" type="password" minLength={12} maxLength={200} required autoComplete="new-password" />
+                </label>
+                <label>
+                  Nhập lại mật khẩu mới
+                  <input name="confirmPassword" type="password" minLength={12} maxLength={200} required autoComplete="new-password" />
+                </label>
+                <small>Sau khi đổi, tất cả phiên đăng nhập sẽ bị thu hồi.</small>
+              </div>
+              <div className="dialog-footer">
+                <button type="button" onClick={() => setModal(null)} disabled={busy}>
+                  Hủy
+                </button>
+                <button className="primary" disabled={busy}>
+                  {busy ? "Đang đổi…" : "Đổi tài khoản"}
+                </button>
+              </div>
+            </form>
+          )}
+          {modal === "start" && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void mutation(
+                  {
+                    action: "start",
+                    date,
+                    platformId,
+                    count,
+                    deposit,
+                    data: paste,
+                  },
+                  `Đã bắt đầu ${count} Key`,
+                );
+              }}
+            >
+              <div className="dialog-body">
+                <label>
+                  Platform
+                  <select aria-label="Platform" required value={platformId} onChange={(e) => setPlatformId(e.target.value)}>
+                    {data?.platforms.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Số Key
+                  <input type="number" min="1" max="500" required value={count} onChange={(e) => setCount(Number(e.target.value))} />
+                </label>
+                <label>
+                  Nạp/Key
+                  <div className="segmented">
+                    {["100", "300", "Khác"].map((v) => (
+                      <button
+                        type="button"
+                        key={v}
+                        className={depositMode === v ? "chosen" : ""}
+                        onClick={() => {
+                          setDepositMode(v);
+                          if (v !== "Khác") setDeposit(v);
+                        }}
+                      >
+                        {v}
+                      </button>
+                    ))}
+                  </div>
+                  {depositMode === "Khác" && <input aria-label="Nạp/Key khác" type="number" min="0.01" step="0.01" max="9999999999" required value={deposit} onChange={(e) => setDeposit(e.target.value)} />}
+                </label>
+                <div className="availability">
+                  <span>
+                    Key có sẵn: <strong>{available}</strong>
+                  </span>
+                  <span className={shortage ? "negative" : ""}>
+                    Thiếu: <strong>{shortage}</strong>
+                  </span>
+                </div>
+                {shortage > 0 && (
+                  <label>
+                    Data bổ sung
+                    <textarea required rows={6} placeholder="Họ tên|STK|Ngân hàng" value={paste} onChange={(e) => setPaste(e.target.value)} />
+                    <small>Phần thừa được lưu vào Kho Key. Tối đa 500 dòng.</small>
+                  </label>
+                )}
+              </div>
+              <div className="dialog-footer">
+                <button type="button" onClick={() => setModal(null)} disabled={busy}>
+                  Hủy
+                </button>
+                <button className="primary" disabled={busy || !platformId}>
+                  {busy ? "Đang xử lý…" : "Bắt đầu"}
+                </button>
+              </div>
+            </form>
+          )}
+          {modal === "import" && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void bulkImport(paste, ownerId || null);
+              }}
+            >
+              <div className="dialog-body">
+                {isAdmin && (
+                  <label>
+                    Giao trực tiếp
+                    <select value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
+                      <option value="">Chưa giao</option>
+                      {data?.workers.map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {w.name} · {w.role}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <label>
+                  Data / Key
+                  <textarea autoFocus required rows={9} placeholder={"Họ tên|STK|Ngân hàng\nhoặc Key đúng 10 field"} value={paste} onChange={(e) => setPaste(e.target.value)} />
+                  <small>Họ tên|STK|Ngân hàng|Chi nhánh|Tài khoản|Mật khẩu|PIN rút|SĐT|Email|Ngày sinh</small>
+                </label>
+                <label className="file-input">
+                  <Upload size={16} />
+                  Nhập file TXT / CSV (phân cách |)
+                  <input
+                    type="file"
+                    accept=".txt,.csv"
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0];
+                      if (f) {
+                        if (f.size > 200000) setError("File tối đa 200 KB");
+                        else setPaste(await f.text());
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+              <div className="dialog-footer">
+                <button type="button" onClick={() => setModal(null)} disabled={busy}>
+                  Hủy
+                </button>
+                <button className="primary" disabled={busy}>
+                  {busy ? "Đang nhập…" : "Nhập dữ liệu"}
+                </button>
+              </div>
+            </form>
+          )}
+          {modal === "assign" && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void mutation({ action: "assign", ids: selected, ownerId }, "Đã giao Data");
+              }}
+            >
+              <div className="dialog-body">
+                <p>Giao {selected.length} Data đã chọn</p>
+                <label>
+                  Người nhận
+                  <select required value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
+                    <option value="">Chọn CTV / CTV con</option>
+                    {data?.workers.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name} · {w.role}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="dialog-footer">
+                <button className="primary" disabled={busy}>
+                  Giao Data
+                </button>
+              </div>
+            </form>
+          )}
+          {modal === "detail" && detail && (
+            <>
+              <div className="dialog-body">
+                <div className="detail-title">
+                  <div>
+                    <h3>{detail.fields[0]}</h3>
+                    <span className="mono muted">
+                      {detail.fields[1]} · {detail.fields[2]}
+                    </span>
+                  </div>
+                  <button
+                    className="subtle"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(detail.fields.join("|"));
+                        setNotice("Đã sao chép Key 10 field");
+                      } catch {
+                        setError("Không thể sao chép; mở Sửa để xem field");
+                      }
+                    }}
+                  >
+                    <Copy size={16} />
+                    Copy Key
+                  </button>
+                </div>
+                <div className="withdraw-list">
+                  <div className="withdraw-head">
+                    <span>Platform / Ngày</span>
+                    <span>Nạp</span>
+                    <span>Rút</span>
+                    <span>Trạng thái</span>
+                    <span />
+                  </div>
+                  {detail.usages.length === 0 && <p className="muted">Key chưa chạy Platform nào.</p>}
+                  {detail.usages.map((u) => (
+                    <form
+                      key={u.id}
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        if (
+                          await mutation(
+                            {
+                              action: "withdraw",
+                              usageId: u.id,
+                              withdrawal: withdrawals[u.id],
+                            },
+                            "Đã lưu Rút",
+                            true,
+                          )
+                        )
+                          await openKey(detail.id);
+                      }}
+                      className="withdraw-row"
+                    >
+                      <div>
+                        <strong>{u.platform?.name}</strong>
+                        <small>{u.settlement.date}</small>
+                      </div>
+                      <span>{money(u.deposit)}</span>
+                      <input
+                        aria-label={`Rút ${u.platform?.name}`}
+                        type="number"
+                        min="0"
+                        max="9999999999"
+                        step="0.01"
+                        required
+                        disabled={isAdmin || u.settlement.status !== "OPEN" || u.status === "CANCELLED"}
+                        value={withdrawals[u.id] ?? "0"}
+                        onChange={(e) =>
+                          setWithdrawals((s) => ({
+                            ...s,
+                            [u.id]: e.target.value,
+                          }))
+                        }
+                      />
+                      <Badge status={u.status} />
+                      {!isAdmin && u.settlement.status === "OPEN" && u.status !== "CANCELLED" ? (
+                        <button className="primary compact" disabled={busy}>
+                          {u.status === "DONE" ? "Lưu" : "Hoàn thành"}
+                        </button>
+                      ) : (
+                        <LockKeyhole size={16} />
+                      )}
+                    </form>
+                  ))}
+                </div>
+              </div>
+              <div className="dialog-footer">
+                <button onClick={() => setModal("edit")}>Sửa Key</button>
+                <button onClick={() => setModal(null)}>Đóng</button>
+              </div>
+            </>
+          )}
+          {modal === "edit" && detail && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void mutation({ action: "editKey", id: detail.id, data: fields.join("|") }, "Đã lưu Key");
+              }}
+            >
+              <div className="dialog-body field-grid">
+                {fieldNames.map((name, i) => (
+                  <label key={name}>
+                    {name}
+                    <input required={i < 3} readOnly={i === 1} maxLength={250} value={fields[i] ?? ""} type={[5, 6].includes(i) ? "password" : "text"} onChange={(e) => setFields((f) => f.map((v, idx) => (idx === i ? e.target.value : v)))} />
+                  </label>
+                ))}
+              </div>
+              <div className="dialog-footer">
+                <button type="button" onClick={() => setModal(null)}>
+                  Hủy
+                </button>
+                <button className="primary" disabled={busy}>
+                  Lưu Key
+                </button>
+              </div>
+            </form>
+          )}
+          {modal === "platform" && (
+            <div>
+              <div className="dialog-body">
+                <div className="platform-manager-head">
+                  <div>
+                    <strong>Platform hiện có</strong>
+                    <small>
+                      {activePlatforms.length} đang hoạt động · {(data?.platforms.length ?? 0) - activePlatforms.length} đã ngừng
+                    </small>
+                  </div>
+                </div>
+                <div className="platform-manager">
+                  {data?.platforms.length ? (
+                    data.platforms.map((p) => (
+                      <div className="platform-manager-row" key={p.id}>
+                        {editingPlatformId === p.id ? (
+                          <form
+                            className="platform-edit"
+                            onSubmit={async (e) => {
+                              e.preventDefault();
+                              if (
+                                await mutation(
+                                  {
+                                    action: "platformRename",
+                                    id: p.id,
+                                    name: platformDraft,
+                                  },
+                                  "Đã đổi tên Platform",
+                                  true,
+                                )
+                              )
+                                setEditingPlatformId("");
+                            }}
+                          >
+                            <input aria-label={`Tên mới ${p.name}`} value={platformDraft} onChange={(e) => setPlatformDraft(e.target.value)} maxLength={80} required autoFocus />
+                            <button className="primary compact" disabled={busy}>
+                              Lưu
+                            </button>
+                            <button type="button" className="compact" onClick={() => setEditingPlatformId("")}>
+                              Hủy
+                            </button>
+                          </form>
+                        ) : (
+                          <>
+                            <div className="platform-manager-name">
+                              <strong>{p.name}</strong>
+                              <span className={`badge ${p.active ? "done" : "cancelled"}`}>{p.active ? "Đang hoạt động" : "Đã ngừng"}</span>
+                            </div>
+                            <div className="actions">
+                              <button
+                                className="icon"
+                                aria-label={`Sửa Platform ${p.name}`}
+                                disabled={busy}
+                                onClick={() => {
+                                  setEditingPlatformId(p.id);
+                                  setPlatformDraft(p.name);
+                                }}
+                              >
+                                <Pencil size={15} />
+                              </button>
+                              {p.active && (
+                                <button
+                                  className="icon danger-text"
+                                  aria-label={`Xóa Platform ${p.name}`}
+                                  disabled={busy}
+                                  onClick={() => {
+                                    if (confirm(`Xóa Platform ${p.name}? Platform đã có lịch sử sẽ được ngừng sử dụng và vẫn giữ dữ liệu cũ.`)) void mutation({ action: "platformDelete", id: p.id }, "Đã xóa/ngừng Platform", true);
+                                  }}
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="empty compact-empty">Chưa có Platform</div>
+                  )}
+                </div>
+                <form
+                  className="platform-create"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const form = e.currentTarget;
+                    const f = new FormData(form);
+                    void mutation({ action: "platform", name: f.get("name") }, "Đã thêm Platform; Key chưa dùng tự đủ điều kiện", true).then((ok) => {
+                      if (ok) form.reset();
+                    });
+                  }}
+                >
+                  <label>
+                    Tên Platform mới
+                    <input name="name" required maxLength={80} placeholder="Ví dụ: Platform A" />
+                  </label>
+                  <button className="primary" disabled={busy}>
+                    <Plus size={16} />
+                    Thêm Platform
+                  </button>
+                </form>
+              </div>
+              <div className="dialog-footer">
+                <button onClick={() => setModal(null)}>Đóng</button>
+              </div>
+            </div>
+          )}
+          {modal === "worker" && (
+            <>
+              <div className="dialog-body">
+                {data?.workers.map((w) => (
+                  <div className="platform-manager-row" key={w.id}>
+                    <div>
+                      <strong>{w.name}</strong>
+                      <small>
+                        {w.email} · {w.role === "CTV_CON" ? "CTV con" : "CTV"}
+                      </small>
+                    </div>
+                    <div className="actions">
+                      <button
+                        className="icon"
+                        onClick={() => {
+                          setEditingWorkerId(w.id);
+                          setWorkerRole(w.role);
+                        }}
+                      >
+                        <Pencil size={15} />
+                      </button>
+                      <button
+                        className="icon danger-text"
+                        onClick={() => {
+                          if (confirm(`Vô hiệu hóa ${w.name}? Lịch sử vẫn được giữ.`)) void mutation({ action: "workerDisable", id: w.id }, "Đã vô hiệu hóa tài khoản", true);
+                        }}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const f = new FormData(e.currentTarget);
+                    void mutation(
+                      {
+                        action: editingWorkerId ? "workerUpdate" : "worker",
+                        ...(editingWorkerId ? { id: editingWorkerId } : {}),
+                        name: f.get("name"),
+                        email: f.get("email"),
+                        password: f.get("password") || undefined,
+                        role: workerRole,
+                        parentCtvId: workerRole === "CTV_CON" ? f.get("parentCtvId") : null,
+                      },
+                      editingWorkerId ? "Đã cập nhật CTV" : "Đã tạo tài khoản CTV",
+                      true,
+                    ).then((ok) => {
+                      if (ok) {
+                        setEditingWorkerId("");
+                        (e.currentTarget as HTMLFormElement).reset();
+                      }
+                    });
+                  }}
+                >
+                  <label>
+                    Họ tên
+                    <input name="name" defaultValue={editingWorkerId ? data?.workers.find((w) => w.id === editingWorkerId)?.name : ""} maxLength={100} required />
+                  </label>
+                  <label>
+                    Email
+                    <input name="email" type="email" defaultValue={editingWorkerId ? data?.workers.find((w) => w.id === editingWorkerId)?.email : ""} maxLength={200} required />
+                  </label>
+                  <label>
+                    Mật khẩu {editingWorkerId && <small>(để trống nếu không đổi)</small>}
+                    <input name="password" type="password" minLength={editingWorkerId ? 0 : 12} maxLength={200} autoComplete="new-password" required={!editingWorkerId} />
+                  </label>
+                  <label>
+                    Vai trò
+                    <select value={workerRole} onChange={(e) => setWorkerRole(e.target.value)}>
+                      <option value="CTV">CTV</option>
+                      <option value="CTV_CON">CTV con</option>
+                    </select>
+                  </label>
+                  {workerRole === "CTV_CON" && (
+                    <label>
+                      CTV cha
+                      <select name="parentCtvId" required>
+                        {data?.workers
+                          .filter((w) => w.role === "CTV" && w.id !== editingWorkerId)
+                          .map((w) => (
+                            <option key={w.id} value={w.id}>
+                              {w.name}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                  )}
+                  <div className="dialog-footer">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingWorkerId("");
+                        setModal(null);
+                      }}
+                    >
+                      Đóng
+                    </button>
+                    <button className="primary" disabled={busy}>
+                      {editingWorkerId ? "Lưu thay đổi" : "Tạo tài khoản"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </>
+          )}
+        </Dialog>
+      )}
+    </div>
+  );
 }
-
-
-
-
