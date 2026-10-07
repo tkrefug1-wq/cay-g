@@ -146,6 +146,8 @@ export default function Workspace({ user }: { user: User }) {
     [ownerId, setOwnerId] = useState(""),
     [withdrawals, setWithdrawals] = useState<Record<string, string>>({});
   const [workerRole, setWorkerRole] = useState("CTV");
+  const [backupBusy, setBackupBusy] = useState(false),
+    [lastBackup, setLastBackup] = useState<string>("");
   const [editingWorkerId, setEditingWorkerId] = useState("");
   const [editingPlatformId, setEditingPlatformId] = useState(""),
     [platformDraft, setPlatformDraft] = useState("");
@@ -209,6 +211,13 @@ export default function Workspace({ user }: { user: User }) {
   useEffect(() => {
     setSelected([]);
   }, [view, date, page, search, filter, archived]);
+  useEffect(() => {
+    if (!isAdmin) return;
+    void fetch("/api/admin/backup/google-sheets", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((result) => { if (result?.last?.time) setLastBackup(result.last.time); })
+      .catch(() => undefined);
+  }, [isAdmin]);
   async function performMutation(command: Record<string, unknown>, message: string, keepOpen = false) {
     setBusy(true);
     setSyncState("syncing");
@@ -350,6 +359,16 @@ export default function Workspace({ user }: { user: User }) {
     setEditingWorkerId("");
     setPlatformId(data?.platforms.find((p) => p.active)?.id ?? "");
     setModal(next);
+  }
+  async function backupGoogleSheets() {
+    setBackupBusy(true); setError("");
+    try {
+      const response = await fetch("/api/admin/backup/google-sheets", { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error);
+      setLastBackup(result.revision); setNotice(`Đã sao lưu Google Sheets · ${result.rows} dòng`);
+    } catch (err) { setError((err as Error).message); }
+    finally { setBackupBusy(false); }
   }
   const locked = data?.settlement && data.settlement.status !== "OPEN";
   const activePlatforms = data?.platforms.filter((p) => p.active) ?? [];
@@ -539,6 +558,10 @@ export default function Workspace({ user }: { user: User }) {
                     <button className="subtle" onClick={() => open("platform")}>
                       <Plus size={16} />
                       Platform
+                    </button>
+                    <button className="subtle" disabled={backupBusy} title={lastBackup ? `Lần gần nhất: ${new Date(lastBackup).toLocaleString("vi-VN")}` : "Chưa có bản sao"} onClick={() => void backupGoogleSheets()}>
+                      <Upload size={16} />
+                      {backupBusy ? "Đang sao lưu…" : "Sao lưu Sheets"}
                     </button>
                   </>
                 )}

@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/admin/backup/google-sheets",
+      "schedule": "15 18 * * *"
+    }
+  ]
+}
