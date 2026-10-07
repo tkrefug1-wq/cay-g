@@ -9,9 +9,7 @@ export async function snapshot(actor: Actor, params: URLSearchParams) {
   const date = dateSchema.parse(params.get('date') ?? day());
   const page = Math.max(1, Math.min(100000, Number(params.get('page')) || 1)), pageSize = 50;
   const search = (params.get('search') ?? '').slice(0, 100);
-  // Snapshot reads are independent; run them on the pool so slow history/count queries do not serialize.
-  return (async () => {
-    const tx = db;
+  return db.$transaction(async tx => {
     const [platforms, workers] = await Promise.all([
       tx.platform.findMany({ where: actor.role === 'ADMIN' ? {} : { active: true }, orderBy: [{ active: 'desc' }, { name: 'asc' }] }),
       actor.role === 'ADMIN' ? tx.user.findMany({ where: { role: { not: 'ADMIN' }, active: true }, select: { id: true, name: true, email: true, role: true, parentCtvId: true }, orderBy: { name: 'asc' } }) : Promise.resolve([]),
@@ -59,7 +57,7 @@ export async function snapshot(actor: Actor, params: URLSearchParams) {
     const eligible = Object.fromEntries(platforms.filter(p => p.active).map(p => [p.id, keyCount - (used.find(u => u.platformId === p.id)?._count ?? 0)]));
     const rows = keys.map(k => ({ ...k, depositTotal: k.usages.filter(u => u.settlement.date === date).reduce((n, u) => n.plus(u.deposit), decimal(0)), withdrawalTotal: k.usages.filter(u => u.settlement.date === date).reduce((n, u) => n.plus(u.withdrawal), decimal(0)) }));
     return { view, date, page, pageSize, total, platforms, workers, keys: rows, eligible, settlement, totals: settlement && settlement.status !== 'OPEN' ? { deposit: settlement.deposit, withdrawal: settlement.withdrawal, fee: settlement.fee, profit: settlement.profit, payout: settlement.payout, parentCommission: settlement.parentCommission, childCommission: settlement.childCommission, adminShare: settlement.adminShare, incomplete: 0 } : totals };
-  })();
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 30_000 });
 }
 export async function keyDetail(actor: Actor, id: string) {
   const key = await db.key.findUnique({ where: { id }, include: { usages: { include: { platform: true, settlement: { select: { date: true, status: true } } }, orderBy: { createdAt: 'desc' } } } });

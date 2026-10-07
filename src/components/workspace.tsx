@@ -42,7 +42,7 @@ export default function Workspace({ user }: { user: User }) {
     finally { if (generation.current === gen && !background) setLoading(false); }
   }, [view, date, page, search, filter, archived]);
   useEffect(() => { const id = setTimeout(() => void load(), search ? 450 : 0); return () => clearTimeout(id); }, [load, search]);
-  useEffect(() => { const id = setInterval(() => { if (!busy) void load(true); }, 20000); return () => clearInterval(id); }, [busy, load]);
+  useEffect(() => { const id = setInterval(() => { if (!busy && document.visibilityState === 'visible') void load(true); }, 60000); return () => clearInterval(id); }, [busy, load]);
   useEffect(() => { setSelected([]); }, [view, date, page, search, filter, archived]);
   async function performMutation(command: Record<string, unknown>, message: string, keepOpen = false) {
     setBusy(true); setSyncState('syncing'); setError(''); setNotice('');
