@@ -34,7 +34,11 @@ export async function snapshot(actor: Actor, params: URLSearchParams) {
         if (children.length) calculated.push({ id: `pending:${parent.id}`, workerId: parent.id, worker: parent, date, status: 'OPEN', ...finance(0, 0, 'CTV', children.reduce((x, c) => x.plus(c.parentCommission), decimal(0))), incomplete: 0 });
       }
       const filtered = calculated.filter(s => !workerId || s.workerId === workerId);
-      return { view, date, page, pageSize, total: filtered.length, platforms, workers, settlements: filtered.slice((page - 1) * pageSize, page * pageSize) };
+      const reconciliationTotals = filtered.reduce((sum, s) => ({
+        deposit: sum.deposit.plus(s.deposit), withdrawal: sum.withdrawal.plus(s.withdrawal), fee: sum.fee.plus(s.fee),
+        profit: sum.profit.plus(s.profit), payout: sum.payout.plus(s.payout), adminShare: sum.adminShare.plus(s.adminShare),
+      }), { deposit: decimal(0), withdrawal: decimal(0), fee: decimal(0), profit: decimal(0), payout: decimal(0), adminShare: decimal(0) });
+      return { view, date, page, pageSize, total: filtered.length, platforms, workers, reconciliationTotals, settlements: filtered.slice((page - 1) * pageSize, page * pageSize) };
     }
     const where: Prisma.KeyWhereInput = {
       ...(actor.role === 'ADMIN' ? (params.get('ownerId') ? { ownerId: params.get('ownerId') === 'unassigned' ? null : params.get('ownerId')! } : {}) : { ownerId: actor.id }),

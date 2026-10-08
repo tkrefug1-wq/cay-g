@@ -59,6 +59,7 @@ type Snapshot = {
   settlement?: Settlement;
   totals?: Totals;
   settlements?: Settlement[];
+  reconciliationTotals?: Pick<Totals, "deposit" | "withdrawal" | "fee" | "profit" | "payout" | "adminShare">;
 };
 type Detail = {
   id: string;
@@ -523,6 +524,22 @@ export default function Workspace({ user }: { user: User }) {
               ))}
             </div>
           )}
+          {isAdmin && view === "settlements" && data?.reconciliationTotals && (
+            <div className="metrics admin-metrics">
+              {[
+                ["Tổng Nạp", data.reconciliationTotals.deposit],
+                ["Tổng Rút", data.reconciliationTotals.withdrawal],
+                ["Tổng Phí", data.reconciliationTotals.fee],
+                ["Tổng Lãi/Lỗ", data.reconciliationTotals.profit],
+                ["Admin nhận", data.reconciliationTotals.adminShare],
+              ].map(([name, value]) => (
+                <div key={name} className={name === "Admin nhận" ? "metric highlight" : "metric"}>
+                  <span>{name}{name === "Admin nhận" && <ArrowUpRight size={16} />}</span>
+                  <strong className={Number(value) < 0 ? "negative" : ""}>{money(value)}</strong>
+                </div>
+              ))}
+            </div>
+          )}
           {view === "summary" && data && (
             <div className="summary-strip">
               <span>
@@ -694,6 +711,7 @@ export default function Workspace({ user }: { user: User }) {
                       <th className="number">Lãi/Lỗ</th>
                       <th className="number">Số tiền trả</th>
                       <th className="number">HH CTV cha</th>
+                      <th className="number">Admin nhận</th>
                       <th>Trạng thái</th>
                       <th />
                     </tr>
@@ -737,8 +755,8 @@ export default function Workspace({ user }: { user: User }) {
                             <strong>{s.worker.name}</strong>
                             <small>{s.worker.role}</small>
                           </td>
-                          {[s.deposit, s.withdrawal, s.fee, s.profit, s.payout, s.parentCommission].map((v, i) => (
-                            <td key={i} className={`number ${i === 4 ? "payout-cell" : ""}`}>
+                          {[s.deposit, s.withdrawal, s.fee, s.profit, s.payout, s.parentCommission, s.adminShare].map((v, i) => (
+                            <td key={i} className={`number ${i === 4 || i === 6 ? "payout-cell" : ""}`}>
                               {money(v)}
                             </td>
                           ))}
