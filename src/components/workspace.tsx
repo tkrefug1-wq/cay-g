@@ -69,6 +69,7 @@ type Detail = {
 };
 type Modal = "start" | "import" | "detail" | "edit" | "platform" | "worker" | "assign" | "account" | null;
 const money = (v: string | number | undefined) => new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 4 }).format(Number(v ?? 0));
+const roleLabel = (role: string) => role === "CTV_CON" ? "CTV DBET" : role;
 const today = () =>
   new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Ho_Chi_Minh",
@@ -416,7 +417,7 @@ export default function Workspace({ user }: { user: User }) {
           <div className="user-avatar">{user.name.charAt(0)}</div>
           <div>
             <strong>{user.name}</strong>
-            <small>{user.role === "CTV_CON" ? "CTV con" : user.role}</small>
+            <small>{roleLabel(user.role)}</small>
           </div>
           <button className="icon" aria-label="Đổi tài khoản và mật khẩu" onClick={() => open("account")}>
             <KeyRound size={17} />
@@ -602,7 +603,7 @@ export default function Workspace({ user }: { user: User }) {
                     {view === "data" && <option value="unassigned">Chưa giao</option>}
                     {data?.workers.map((w) => (
                       <option key={w.id} value={w.id}>
-                        {w.name} · {w.role}
+                        {w.name} · {roleLabel(w.role)}
                       </option>
                     ))}
                   </select>
@@ -753,7 +754,7 @@ export default function Workspace({ user }: { user: User }) {
                         <tr key={s.id}>
                           <td>
                             <strong>{s.worker.name}</strong>
-                            <small>{s.worker.role}</small>
+                            <small>{roleLabel(s.worker.role)}</small>
                           </td>
                           {[s.deposit, s.withdrawal, s.fee, s.profit, s.payout, s.parentCommission, s.adminShare].map((v, i) => (
                             <td key={i} className={`number ${i === 4 || i === 6 ? "payout-cell" : ""}`}>
@@ -848,7 +849,7 @@ export default function Workspace({ user }: { user: User }) {
                               <>
                                 <td>
                                   {k.owner?.name ?? <span className="muted">Chưa giao</span>}
-                                  {k.owner && <small>{k.owner.role}</small>}
+                                  {k.owner && <small>{roleLabel(k.owner.role)}</small>}
                                 </td>
                                 <td>{k.archived ? <Badge status="ARCHIVED" /> : active.length ? <Badge status="ACTIVE" /> : completed.length ? <Badge status="DONE" /> : <span className="badge">Sẵn sàng</span>}</td>
                               </>
@@ -1137,7 +1138,7 @@ export default function Workspace({ user }: { user: User }) {
                         <option value="">Chưa giao</option>
                         {data?.workers.map((w) => (
                           <option key={w.id} value={w.id}>
-                            {w.name} · {w.role}
+                            {w.name} · {roleLabel(w.role)}
                           </option>
                         ))}
                       </select>
@@ -1187,10 +1188,10 @@ export default function Workspace({ user }: { user: User }) {
                 <label>
                   Người nhận
                   <select required value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
-                    <option value="">Chọn CTV / CTV con</option>
+                    <option value="">Chọn CTV / CTV DBET</option>
                     {data?.workers.map((w) => (
                       <option key={w.id} value={w.id}>
-                        {w.name} · {w.role}
+                        {w.name} · {roleLabel(w.role)}
                       </option>
                     ))}
                   </select>
@@ -1454,7 +1455,7 @@ export default function Workspace({ user }: { user: User }) {
                     <div>
                       <strong>{w.name}</strong>
                       <small>
-                        {w.email} · {w.role === "CTV_CON" ? "CTV con" : "CTV"}
+                        {w.email} · {roleLabel(w.role)}
                       </small>
                     </div>
                     <div className="actions">
@@ -1518,7 +1519,7 @@ export default function Workspace({ user }: { user: User }) {
                     Vai trò
                     <select value={workerRole} onChange={(e) => setWorkerRole(e.target.value)}>
                       <option value="CTV">CTV</option>
-                      <option value="CTV_CON">CTV con</option>
+                      <option value="CTV_CON">CTV DBET</option>
                     </select>
                   </label>
                   {workerRole === "CTV_CON" && (
