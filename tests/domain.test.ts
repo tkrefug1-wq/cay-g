@@ -70,15 +70,23 @@ test('new Platform immediately makes old Key eligible', async () => {
 test('virtual Data is used once then archived; real Data remains reusable', async () => {
   await start(ctv, 1, platform, { dataType: 'VIRTUAL', data: 'Virtual|777001|VCB\nExtra|777002|VCB' });
   assert.equal(await db.key.count(), 1); await finish();
-  const virtual = await db.key.findFirstOrThrow({ where: { normalizedStk: '777001' } });
+  const virtual = await db.key.findFirstOrThrow({ where: { dataType: 'VIRTUAL' } });
   assert.equal(virtual.dataType, 'VIRTUAL'); assert.equal(virtual.archived, true);
   await assert.rejects(start(ctv, 1, platformB), /Thiếu: 1/);
-  const filtered = await snapshot(admin, new URLSearchParams({ view: 'data', dataType: 'VIRTUAL' }));
+  const filtered = await snapshot(admin, new URLSearchParams({ view: 'data', dataType: 'VIRTUAL', archived: 'true' }));
   assert.equal(filtered.total, 1);
 });
 test('withdrawal can change after DONE before CLOSED, including zero', async () => {
   await importData(); await start(); await finish(); await finish(ctv, '0');
   assert.equal((await usage()).withdrawal.toString(), '0'); assert.equal((await usage()).status, 'DONE');
+});
+test('bulk run actions complete and void selected Data atomically', async () => {
+  await importData(ctv, 3); await start(ctv, 3);
+  const keys = await db.key.findMany({ orderBy: { normalizedStk: 'asc' }, select: { id: true } });
+  const completed = await call(ctv, { action: 'bulkRuns', operation: 'COMPLETE', ids: keys.slice(0, 2).map(key => key.id), date: day() }) as { affected: number };
+  assert.equal(completed.affected, 2); assert.equal(await db.usage.count({ where: { status: 'DONE' } }), 2);
+  await call(ctv, { action: 'bulkRuns', operation: 'VOID', ids: [keys[0].id], date: day() });
+  const totals = await calculate(db, ctv.id, day()); assert.equal(totals.deposit.toString(), '200');
 });
 test('worker can cancel a usage before CLOSED and totals exclude it', async () => {
   await importData(); await start(); await finish();

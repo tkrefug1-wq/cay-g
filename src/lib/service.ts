@@ -13,6 +13,7 @@ export const commandSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('assign'), ids: idsSchema, ownerId: z.string() }),
   z.object({ action: z.literal('withdraw'), usageId: z.string(), withdrawal: amountSchema }),
   z.object({ action: z.literal('cancelUsage'), usageId: z.string() }),
+  base.extend({ action: z.literal('bulkRuns'), ids: idsSchema, operation: z.enum(['COMPLETE', 'VOID']) }),
   base.extend({ action: z.literal('removeToday'), ids: idsSchema }),
   z.object({ action: z.literal('deleteKeys'), ids: idsSchema }),
   z.object({ action: z.literal('editKey'), id: z.string(), data: z.string().max(3000) }),
@@ -161,6 +162,27 @@ async function execute(tx: Tx, actor: Actor, cmd: Command): Promise<Prisma.Input
       await tx.usage.update({ where: { id: usage.id }, data: { status: 'CANCELLED', withdrawal: 0, completedAt: null } });
       await audit(tx, actor, 'CANCEL_USAGE', usage.id, { platformId: usage.platformId, deposit: usage.deposit.toString(), withdrawal: usage.withdrawal.toString() });
       return { cancelled: true };
+    }
+    case 'bulkRuns': {
+      worker(actor);
+      await checkDay(tx, actor.id, cmd.date);
+      const allowedStatuses: Prisma.UsageWhereInput['status'] = cmd.operation === 'COMPLETE' ? 'ACTIVE' : { in: ['ACTIVE', 'DONE'] };
+      const usages = await tx.usage.findMany({
+        where: { keyId: { in: cmd.ids }, settlement: { workerId: actor.id, date: cmd.date }, status: allowedStatuses },
+        select: { id: true, keyId: true, status: true },
+      });
+      ensure(usages.length > 0, cmd.operation === 'COMPLETE' ? 'Không còn Data đang làm trong lựa chọn' : 'Không còn Data có thể hủy trong lựa chọn', 409);
+      const usageIds = usages.map(usage => usage.id), keyIds = [...new Set(usages.map(usage => usage.keyId))];
+      if (cmd.operation === 'COMPLETE') {
+        await tx.usage.updateMany({ where: { id: { in: usageIds } }, data: { status: 'DONE', completedAt: new Date() } });
+        await tx.key.updateMany({ where: { id: { in: keyIds }, dataType: 'VIRTUAL' }, data: { archived: true } });
+      } else {
+        await tx.usage.updateMany({ where: { id: { in: usageIds } }, data: { status: 'CANCELLED', withdrawal: 0, completedAt: null } });
+        await tx.todayEntry.updateMany({ where: { keyId: { in: keyIds }, date: cmd.date }, data: { visible: false } });
+        await tx.key.updateMany({ where: { id: { in: keyIds }, dataType: 'VIRTUAL' }, data: { archived: true } });
+      }
+      await audit(tx, actor, `BULK_${cmd.operation}`, actor.id, { date: cmd.date, keyIds, usageIds });
+      return { affected: usages.length, keys: keyIds.length };
     }
     case 'removeToday': {
       worker(actor);

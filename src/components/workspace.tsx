@@ -47,6 +47,9 @@ type Settlement = Totals & {
   worker: User;
   date: string;
   status: string;
+  totalKeys: number;
+  active: number;
+  done: number;
 };
 type Snapshot = {
   date: string;
@@ -59,7 +62,8 @@ type Snapshot = {
   settlement?: Settlement;
   totals?: Totals;
   settlements?: Settlement[];
-  reconciliationTotals?: Pick<Totals, "deposit" | "withdrawal" | "fee" | "profit" | "payout" | "adminShare">;
+  reconciliationTotals?: Pick<Totals, "deposit" | "withdrawal" | "fee" | "profit" | "payout" | "adminShare"> & { totalKeys: number; done: number; active: number };
+  runCounts?: { active: number; done: number; cancelled: number };
 };
 type Detail = {
   id: string;
@@ -506,37 +510,34 @@ export default function Workspace({ user }: { user: User }) {
             </div>
           )}
           {!isAdmin && data?.totals && (
-            <div className="metrics">
+            <div className="metrics deposit-metrics">
               {[
-                ["Nạp", data.totals.deposit],
-                ["Rút", data.totals.withdrawal],
-                ["Phí", data.totals.fee],
-                ["Lãi/Lỗ", data.totals.profit],
-                ["Nhận được", data.totals.payout],
+                ["Tổng Nạp", data.totals.deposit],
+                ["Tổng Key", (data.runCounts?.active ?? 0) + (data.runCounts?.done ?? 0)],
+                ["Đang làm", data.runCounts?.active ?? 0],
+                ["Hoàn thành", data.runCounts?.done ?? 0],
               ].map(([name, value]) => (
-                <div key={name} className={name === "Nhận được" ? "metric highlight" : "metric"}>
+                <div key={name} className={name === "Tổng Nạp" ? "metric highlight" : "metric"}>
                   <span>
                     {name}
-                    {name === "Nhận được" && <ArrowUpRight size={16} />}
+                    {name === "Tổng Nạp" && <ArrowUpRight size={16} />}
                   </span>
-                  <strong className={Number(value) < 0 ? "negative" : ""}>{money(value)}</strong>
-                  {name === "Nhận được" && Number(data.totals?.childCommission) !== 0 && <small>Gồm HH con: {money(data.totals?.childCommission)}</small>}
+                  <strong>{money(value)}</strong>
                 </div>
               ))}
             </div>
           )}
           {isAdmin && view === "settlements" && data?.reconciliationTotals && (
-            <div className="metrics admin-metrics">
+            <div className="metrics deposit-metrics admin-metrics">
               {[
                 ["Tổng Nạp", data.reconciliationTotals.deposit],
-                ["Tổng Rút", data.reconciliationTotals.withdrawal],
-                ["Tổng Phí", data.reconciliationTotals.fee],
-                ["Tổng Lãi/Lỗ", data.reconciliationTotals.profit],
-                ["Admin nhận", data.reconciliationTotals.adminShare],
+                ["Tổng Key", data.reconciliationTotals.totalKeys],
+                ["Đang làm", data.reconciliationTotals.active],
+                ["Hoàn thành", data.reconciliationTotals.done],
               ].map(([name, value]) => (
-                <div key={name} className={name === "Admin nhận" ? "metric highlight" : "metric"}>
-                  <span>{name}{name === "Admin nhận" && <ArrowUpRight size={16} />}</span>
-                  <strong className={Number(value) < 0 ? "negative" : ""}>{money(value)}</strong>
+                <div key={name} className={name === "Tổng Nạp" ? "metric highlight" : "metric"}>
+                  <span>{name}{name === "Tổng Nạp" && <ArrowUpRight size={16} />}</span>
+                  <strong>{money(value)}</strong>
                 </div>
               ))}
             </div>
@@ -676,25 +677,24 @@ export default function Workspace({ user }: { user: User }) {
                   Chọn tất cả {data?.total} kết quả
                 </button>
                 {isAdmin && view === "data" && <button onClick={() => open("assign")}>Giao Data</button>}
-                <button
-                  className="danger-text"
-                  disabled={busy || (!!locked && view === "today")}
-                  onClick={() => {
-                    const action = view === "today" ? "removeToday" : "deleteKeys";
-                    if (confirm(view === "today" ? "Xóa khỏi hôm nay sẽ hủy các Platform đang làm; DONE và lịch sử được giữ lại. Tiếp tục?" : "Key chưa dùng sẽ xóa vĩnh viễn. Key có lịch sử sẽ được lưu trữ. Tiếp tục?"))
-                      void mutation(
-                        {
-                          action,
-                          ids: selected,
-                          ...(action === "removeToday" ? { date } : {}),
-                        },
-                        "Đã xử lý các Key được chọn",
-                      );
-                  }}
-                >
-                  <Trash2 size={15} />
-                  {view === "today" ? "Xóa khỏi hôm nay" : "Xóa / lưu trữ"}
-                </button>
+                {!isAdmin && ["today", "summary"].includes(view) ? (
+                  <>
+                    <button className="primary" disabled={busy || !!locked} onClick={() => void mutation({ action: "bulkRuns", operation: "COMPLETE", ids: selected, date }, "Đã hoàn thành các Data được chọn")}>
+                      <Check size={15} /> Hoàn thành
+                    </button>
+                    <button className="danger-text" disabled={busy || !!locked} onClick={() => {
+                      if (confirm(`Xóa ${selected.length} Data lỗi? Các lượt chạy sẽ bị hủy và Tổng Nạp được tính lại.`)) void mutation({ action: "bulkRuns", operation: "VOID", ids: selected, date }, "Đã xóa Data lỗi");
+                    }}>
+                      <Trash2 size={15} /> Xóa Data lỗi
+                    </button>
+                  </>
+                ) : (
+                  <button className="danger-text" disabled={busy} onClick={() => {
+                    if (confirm("Key chưa dùng sẽ xóa vĩnh viễn. Key có lịch sử sẽ được lưu trữ. Tiếp tục?")) void mutation({ action: "deleteKeys", ids: selected }, "Đã xử lý các Key được chọn");
+                  }}>
+                    <Trash2 size={15} /> Xóa / lưu trữ
+                  </button>
+                )}
                 <button className="subtle" onClick={() => setSelected([])}>
                   Bỏ chọn
                 </button>
@@ -707,22 +707,17 @@ export default function Workspace({ user }: { user: User }) {
                     <tr>
                       <th>Người nhận</th>
                       <th className="number">Nạp</th>
-                      <th className="number">Rút</th>
-                      <th className="number">Phí</th>
-                      <th className="number">Lãi/Lỗ</th>
-                      <th className="number">Số tiền trả</th>
-                      <th className="number">HH CTV cha</th>
-                      <th className="number">Admin nhận</th>
+                      <th className="number">Tổng Key</th>
+                      <th className="number">Hoàn thành</th>
+                      <th className="number">Đang làm</th>
                       <th>Trạng thái</th>
                       <th />
                     </tr>
                   ) : (
                     <tr>
-                      {view !== "summary" && (
-                        <th className="checkbox-cell">
-                          <input aria-label="Chọn tất cả trang này" type="checkbox" checked={allSelected} onChange={() => setSelected(allSelected ? [] : keys.map((k) => k.id))} />
-                        </th>
-                      )}
+                      <th className="checkbox-cell">
+                        <input aria-label="Chọn tất cả trang này" type="checkbox" checked={allSelected} onChange={() => setSelected(allSelected ? [] : keys.map((k) => k.id))} />
+                      </th>
                       <th>{view === "inventory" ? "Key" : "Data / Key"}</th>
                       {view === "inventory" ? (
                         <>
@@ -739,8 +734,7 @@ export default function Workspace({ user }: { user: User }) {
                         <>
                           <th>Platform</th>
                           <th className="number">Nạp</th>
-                          <th className="number">Rút</th>
-                          <th>Tiến độ</th>
+                          <th>Trạng thái</th>
                         </>
                       )}
                       <th />
@@ -756,11 +750,10 @@ export default function Workspace({ user }: { user: User }) {
                             <strong>{s.worker.name}</strong>
                             <small>{roleLabel(s.worker.role)}</small>
                           </td>
-                          {[s.deposit, s.withdrawal, s.fee, s.profit, s.payout, s.parentCommission, s.adminShare].map((v, i) => (
-                            <td key={i} className={`number ${i === 4 || i === 6 ? "payout-cell" : ""}`}>
-                              {money(v)}
-                            </td>
-                          ))}
+                          <td className="number payout-cell">{money(s.deposit)}</td>
+                          <td className="number">{s.totalKeys}</td>
+                          <td className="number">{s.done}</td>
+                          <td className="number">{s.active}</td>
                           <td>
                             <Badge status={s.status} />
                           </td>
@@ -777,7 +770,7 @@ export default function Workspace({ user }: { user: User }) {
                                       APPROVED: "PAID",
                                     } as Record<string, string>
                                   )[s.status];
-                                  if (confirm(`${s.worker.name}: chuyển sang ${target}? Số tiền trả: ${money(s.payout)}`))
+                                  if (confirm(`${s.worker.name}: chuyển sang ${target}? Sau khi chốt, dữ liệu ngày sẽ bị khóa.`))
                                     void mutation(
                                       {
                                         action: "transition",
@@ -813,11 +806,9 @@ export default function Workspace({ user }: { user: User }) {
                         const names = (list: Usage[]) => list.map((u) => data?.platforms.find((p) => p.id === u.platformId)?.name ?? "Platform").join(", ");
                         return (
                           <tr key={k.id} className={selected.includes(k.id) ? "selected" : ""}>
-                            {view !== "summary" && (
-                              <td className="checkbox-cell">
-                                <input aria-label={`Chọn ${k.normalizedStk}`} type="checkbox" checked={selected.includes(k.id)} onChange={() => toggle(k.id)} />
-                              </td>
-                            )}
+                            <td className="checkbox-cell">
+                              <input aria-label={`Chọn ${k.normalizedStk}`} type="checkbox" checked={selected.includes(k.id)} onChange={() => toggle(k.id)} />
+                            </td>
                             <td>
                               <strong>{k.fullName}</strong>
                               <small className="mono">
@@ -859,32 +850,6 @@ export default function Workspace({ user }: { user: User }) {
                                   <div className="platform-tags">{usages.length ? usages.map((u) => <span key={u.id}>{data?.platforms.find((p) => p.id === u.platformId)?.name}</span>) : <span className="muted">Chưa có Platform</span>}</div>
                                 </td>
                                 <td className="number">{money(k.depositTotal)}</td>
-                                <td className="number">
-                                  {view === "today" && usages.length ? (
-                                    <div className="sheet-withdrawals">
-                                      {usages.map((u) => (
-                                        <input
-                                          key={u.id}
-                                          className="sheet-input"
-                                          aria-label={`Rút ${data?.platforms.find((p) => p.id === u.platformId)?.name ?? "Platform"}`}
-                                          type="number"
-                                          min="0"
-                                          max="9999999999"
-                                          step="0.01"
-                                          disabled={u.settlement.status !== "OPEN" || u.status === "CANCELLED"}
-                                          value={withdrawals[u.id] ?? String(u.withdrawal)}
-                                          onChange={(e) => queueWithdrawalSave(u, e.target.value)}
-                                          onBlur={(e) => queueWithdrawalSave(u, e.target.value, 0)}
-                                          onKeyDown={(e) => {
-                                            if (e.key === "Enter") e.currentTarget.blur();
-                                          }}
-                                        />
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    money(k.withdrawalTotal)
-                                  )}
-                                </td>
                                 <td>
                                   {usages.length ? (
                                     <div className="progress-cell">
@@ -907,7 +872,7 @@ export default function Workspace({ user }: { user: User }) {
                             )}
                             <td>
                               <button className="row-action" onClick={() => void openKey(k.id, "detail", k)}>
-                                {["today", "summary"].includes(view) ? "Mở / Nhập Rút" : "Mở"}
+                                Mở
                                 <ArrowUpRight size={14} />
                               </button>
                             </td>
@@ -1235,7 +1200,6 @@ export default function Workspace({ user }: { user: User }) {
                   <div className="withdraw-head">
                     <span>Platform / Ngày</span>
                     <span>Nạp</span>
-                    <span>Rút</span>
                     <span>Trạng thái</span>
                     <span />
                   </div>
@@ -1250,9 +1214,9 @@ export default function Workspace({ user }: { user: User }) {
                             {
                               action: "withdraw",
                               usageId: u.id,
-                              withdrawal: withdrawals[u.id],
+                              withdrawal: "0",
                             },
-                            "Đã lưu Rút",
+                            "Đã hoàn thành Data",
                             true,
                           )
                         )
@@ -1265,41 +1229,23 @@ export default function Workspace({ user }: { user: User }) {
                         <small>{u.settlement.date}</small>
                       </div>
                       <span>{money(u.deposit)}</span>
-                      <input
-                        aria-label={`Rút ${u.platform?.name}`}
-                        type="number"
-                        min="0"
-                        max="9999999999"
-                        step="0.01"
-                        required
-                        disabled={isAdmin || u.settlement.status !== "OPEN" || u.status === "CANCELLED"}
-                        value={withdrawals[u.id] ?? "0"}
-                        onChange={(e) =>
-                          setWithdrawals((s) => ({
-                            ...s,
-                            [u.id]: e.target.value,
-                          }))
-                        }
-                      />
                       <Badge status={u.status} />
                       {!isAdmin && u.settlement.status === "OPEN" && u.status !== "CANCELLED" ? (
                         <div className="usage-actions">
-                          <button className="primary compact" disabled={busy}>
-                            {u.status === "DONE" ? "Lưu" : "Hoàn thành"}
-                          </button>
+                          {u.status === "ACTIVE" && <button className="primary compact" disabled={busy}>Hoàn thành</button>}
                           <button
                             type="button"
                             className="danger-text compact"
                             disabled={busy}
                             onClick={async () => {
-                              if (!confirm(`Hủy lượt chạy ${u.platform?.name}? Nạp/Rút của lượt này sẽ bị loại khỏi Tổng kết.`)) return;
+                              if (!confirm(`Xóa Data lỗi trên ${u.platform?.name}? Tiền Nạp của lượt này sẽ bị loại khỏi Tổng kết.`)) return;
                               if (await mutation({ action: "cancelUsage", usageId: u.id }, "Đã hủy lượt chạy", true)) {
                                 detailCache.current.delete(detail.id);
                                 await openKey(detail.id);
                               }
                             }}
                           >
-                            Hủy lượt
+                            Xóa lỗi
                           </button>
                         </div>
                       ) : (

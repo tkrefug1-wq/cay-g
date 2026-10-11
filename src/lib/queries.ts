@@ -21,7 +21,8 @@ export async function snapshot(actor: Actor, params: URLSearchParams) {
         const deposit = s.usages.reduce((x, u) => x.plus(u.deposit), decimal(0));
         const withdrawal = s.usages.reduce((x, u) => x.plus(u.withdrawal), decimal(0));
         const totals = s.status === 'OPEN' ? finance(deposit, withdrawal, s.worker.role) : { deposit: s.deposit, withdrawal: s.withdrawal, fee: s.fee, profit: s.profit, payout: s.payout, parentCommission: s.parentCommission, childCommission: s.childCommission, adminShare: s.adminShare };
-        return { id: s.id, workerId: s.workerId, worker: s.worker, date: s.date, status: s.status, ...totals, incomplete: s.usages.filter(u => u.status === 'ACTIVE').length };
+        const active = s.usages.filter(u => u.status === 'ACTIVE').length, done = s.usages.filter(u => u.status === 'DONE').length;
+        return { id: s.id, workerId: s.workerId, worker: s.worker, date: s.date, status: s.status, ...totals, incomplete: active, active, done, totalKeys: active + done };
       });
       for (const s of calculated) if (s.worker.role === 'CTV' && s.status === 'OPEN') {
         const commission = calculated.filter(c => c.worker.parentCtvId === s.workerId).reduce((x, c) => x.plus(c.parentCommission), decimal(0));
@@ -31,13 +32,14 @@ export async function snapshot(actor: Actor, params: URLSearchParams) {
       for (const parent of workers.filter(w => w.role === 'CTV' && (!workerId || workerId === w.id))) {
         if (calculated.some(s => s.workerId === parent.id)) continue;
         const children = calculated.filter(c => c.worker.parentCtvId === parent.id);
-        if (children.length) calculated.push({ id: `pending:${parent.id}`, workerId: parent.id, worker: parent, date, status: 'OPEN', ...finance(0, 0, 'CTV', children.reduce((x, c) => x.plus(c.parentCommission), decimal(0))), incomplete: 0 });
+        if (children.length) calculated.push({ id: `pending:${parent.id}`, workerId: parent.id, worker: parent, date, status: 'OPEN', ...finance(0, 0, 'CTV', children.reduce((x, c) => x.plus(c.parentCommission), decimal(0))), incomplete: 0, active: 0, done: 0, totalKeys: 0 });
       }
       const filtered = calculated.filter(s => !workerId || s.workerId === workerId);
       const reconciliationTotals = filtered.reduce((sum, s) => ({
         deposit: sum.deposit.plus(s.deposit), withdrawal: sum.withdrawal.plus(s.withdrawal), fee: sum.fee.plus(s.fee),
         profit: sum.profit.plus(s.profit), payout: sum.payout.plus(s.payout), adminShare: sum.adminShare.plus(s.adminShare),
-      }), { deposit: decimal(0), withdrawal: decimal(0), fee: decimal(0), profit: decimal(0), payout: decimal(0), adminShare: decimal(0) });
+        totalKeys: sum.totalKeys + s.totalKeys, done: sum.done + s.done, active: sum.active + s.active,
+      }), { deposit: decimal(0), withdrawal: decimal(0), fee: decimal(0), profit: decimal(0), payout: decimal(0), adminShare: decimal(0), totalKeys: 0, done: 0, active: 0 });
       return { view, date, page, pageSize, total: filtered.length, platforms, workers, reconciliationTotals, settlements: filtered.slice((page - 1) * pageSize, page * pageSize) };
     }
     const where: Prisma.KeyWhereInput = {
@@ -62,14 +64,16 @@ export async function snapshot(actor: Actor, params: URLSearchParams) {
       return { view, date, page, pageSize, total, platforms, workers, keys: rows };
     }
     if (scope === 'meta') {
-      const [realCount, used, settlement, totals] = await Promise.all([
+      const [realCount, used, settlement, totals, runStatuses] = await Promise.all([
         tx.key.count({ where: { ownerId: actor.id, archived: false, dataType: 'REAL' } }),
         tx.usage.groupBy({ by: ['platformId'], where: { key: { ownerId: actor.id, archived: false, dataType: 'REAL' }, status: { not: 'CANCELLED' } }, _count: true }),
         tx.settlement.findUnique({ where: { workerId_date: { workerId: actor.id, date } } }),
         calculate(tx, actor.id, date),
+        tx.usage.groupBy({ by: ['status'], where: { settlement: { workerId: actor.id, date } }, _count: true }),
       ]);
       const eligible = Object.fromEntries(platforms.filter(p => p.active).map(p => [p.id, realCount - (used.find(u => u.platformId === p.id)?._count ?? 0)]));
-      return { eligible, settlement, totals: settlement && settlement.status !== 'OPEN' ? { deposit: settlement.deposit, withdrawal: settlement.withdrawal, fee: settlement.fee, profit: settlement.profit, payout: settlement.payout, parentCommission: settlement.parentCommission, childCommission: settlement.childCommission, adminShare: settlement.adminShare, incomplete: 0 } : totals };
+      const runCounts = { active: runStatuses.find(s => s.status === 'ACTIVE')?._count ?? 0, done: runStatuses.find(s => s.status === 'DONE')?._count ?? 0, cancelled: runStatuses.find(s => s.status === 'CANCELLED')?._count ?? 0 };
+      return { eligible, settlement, runCounts, totals: settlement && settlement.status !== 'OPEN' ? { deposit: settlement.deposit, withdrawal: settlement.withdrawal, fee: settlement.fee, profit: settlement.profit, payout: settlement.payout, parentCommission: settlement.parentCommission, childCommission: settlement.childCommission, adminShare: settlement.adminShare, incomplete: 0 } : totals };
     }
     const [keys, total, realCount, used, settlement, totals] = await Promise.all([
       tx.key.findMany({ where, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], skip: (page - 1) * pageSize, take: pageSize, select: { id: true, fullName: true, normalizedStk: true, bank: true, archived: true, dataType: true, owner: { select: { id: true, name: true, role: true } }, usages: { where: { status: { not: 'CANCELLED' } }, select: { id: true, platformId: true, deposit: true, withdrawal: true, status: true, settlement: { select: { date: true, status: true } } } } } }),
