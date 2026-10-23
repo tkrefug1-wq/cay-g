@@ -693,7 +693,7 @@ export default function Workspace({ user }: { user: User }) {
                   Chọn tất cả {data?.total} kết quả
                 </button>
                 {isAdmin && view === "data" && <button onClick={() => open("assign")}>Giao Data</button>}
-                {!isAdmin && view === "inventory" && (
+                {!isAdmin && ["inventory", "today"].includes(view) && (
                   <button className="primary" disabled={busy || selected.length > 500} onClick={() => void copySelectedKeys()}>
                     <Copy size={15} /> Sao chép Data
                   </button>
