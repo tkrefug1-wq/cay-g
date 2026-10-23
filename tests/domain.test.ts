@@ -80,6 +80,12 @@ test('withdrawal can change after DONE before CLOSED, including zero', async () 
   await importData(); await start(); await finish(); await finish(ctv, '0');
   assert.equal((await usage()).withdrawal.toString(), '0'); assert.equal((await usage()).status, 'DONE');
 });
+test('data fields can be reordered by header or inline labels', () => {
+  const byHeader = parseData('Ngân hàng|Họ tên|STK\nVCB|Nguyễn Văn A|001-234');
+  assert.deepEqual(byHeader[0], { fullName: 'Nguyễn Văn A', normalizedStk: '001234', bank: 'VCB', branch: '', account: '', password: '', pin: '', phone: '', email: '', birthDate: '' });
+  const labelled = parseData('Email:a@example.com|PIN rút:123456|Ngân hàng:MB|Ngày sinh:01/01/2000|Họ tên:Nguyễn B|SĐT:0901234567|Mật khẩu:secret|STK:998877|Tài khoản:userb|Chi nhánh:Hà Nội');
+  assert.equal(labelled[0].normalizedStk, '998877'); assert.equal(labelled[0].email, 'a@example.com'); assert.equal(labelled[0].branch, 'Hà Nội');
+});
 test('bulk run actions complete and void selected Data atomically', async () => {
   await importData(ctv, 3); await start(ctv, 3);
   const keys = await db.key.findMany({ orderBy: { normalizedStk: 'asc' }, select: { id: true } });

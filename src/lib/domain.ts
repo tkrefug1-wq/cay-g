@@ -19,14 +19,51 @@ export function finance(deposit: Prisma.Decimal.Value, withdrawal: Prisma.Decima
   const workerShare = profit.minus(adminShare).minus(parentCommission);
   return { deposit: d, withdrawal: w, fee, profit, adminShare, parentCommission, childCommission: decimal(childCommission), payout: d.plus(workerShare).plus(childCommission) };
 }
+
+const dataFields = ['fullName', 'stk', 'bank', 'branch', 'account', 'password', 'pin', 'phone', 'email', 'birthDate'] as const;
+type DataField = typeof dataFields[number];
+const fieldAliases: Record<string, DataField> = {
+  'ho ten': 'fullName', 'ten': 'fullName', 'full name': 'fullName',
+  'stk': 'stk', 'so tai khoan': 'stk',
+  'ngan hang': 'bank', 'bank': 'bank',
+  'chi nhanh': 'branch', 'branch': 'branch',
+  'tai khoan': 'account', 'username': 'account', 'user': 'account',
+  'mat khau': 'password', 'password': 'password', 'pass': 'password',
+  'pin rut': 'pin', 'pin': 'pin',
+  'sdt': 'phone', 'so dien thoai': 'phone', 'phone': 'phone',
+  'email': 'email',
+  'ngay sinh': 'birthDate', 'birth date': 'birthDate', 'birthday': 'birthDate',
+};
+const normalizeLabel = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/đ/g, 'd').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+const fieldFromLabel = (value: string) => fieldAliases[normalizeLabel(value)];
+
 export function parseData(text: string) {
   const lines = text.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
   ensure(lines.length > 0 && lines.length <= 500, 'Mỗi lần nhập từ 1 đến 500 dòng');
+  const first = lines[0].split('|').map(x => x.trim());
+  const header = first.map(fieldFromLabel);
+  const hasHeader = (first.length === 3 || first.length === 10) && header.every(Boolean) && new Set(header).size === header.length;
+  const inputLines = hasHeader ? lines.slice(1) : lines;
+  ensure(inputLines.length > 0, 'Chưa có dòng dữ liệu sau tiêu đề');
   const seen = new Set<string>();
-  return lines.map((line, i) => {
-    const fields = line.split('|').map(x => x.trim());
+  return inputLines.map((line, i) => {
+    let fields = line.split('|').map(x => x.trim());
     ensure(fields.length === 3 || fields.length === 10, `Dòng ${i + 1}: cần đúng 3 hoặc 10 field`);
     ensure(fields.every(v => v.length <= 250), `Dòng ${i + 1}: field quá dài`);
+    const labelled = fields.map(value => {
+      const separator = value.indexOf(':');
+      if (separator < 1) return null;
+      const field = fieldFromLabel(value.slice(0, separator));
+      return field ? { field, value: value.slice(separator + 1).trim() } : null;
+    });
+    if (labelled.every(Boolean)) {
+      ensure(new Set(labelled.map(item => item!.field)).size === fields.length, `Dòng ${i + 1}: nhãn field bị lặp`);
+      const values = Object.fromEntries(labelled.map(item => [item!.field, item!.value]));
+      fields = dataFields.slice(0, fields.length === 3 ? 3 : 10).map(field => values[field] ?? '');
+    } else if (hasHeader) {
+      const values = Object.fromEntries(header.map((field, index) => [field, fields[index]]));
+      fields = dataFields.slice(0, fields.length === 3 ? 3 : 10).map(field => values[field] ?? '');
+    }
     const [fullName, stk, bank, branch = '', account = '', password = '', pin = '', phone = '', email = '', birthDate = ''] = fields;
     const normalizedStk = stk.replace(/\D/g, '');
     ensure(fullName && bank && normalizedStk.length >= 3 && normalizedStk.length <= 30, `Dòng ${i + 1}: Họ tên, STK hoặc ngân hàng không hợp lệ`);

@@ -1113,7 +1113,7 @@ export default function Workspace({ user }: { user: User }) {
                 <label>
                   Data / Key
                   <textarea autoFocus required rows={9} placeholder={"Họ tên|STK|Ngân hàng\nhoặc Key đúng 10 field"} value={paste} onChange={(e) => setPaste(e.target.value)} />
-                  <small>Họ tên|STK|Ngân hàng|Chi nhánh|Tài khoản|Mật khẩu|PIN rút|SĐT|Email|Ngày sinh</small>
+                  <small>Có thể đảo thứ tự: thêm dòng tiêu đề đúng thứ tự cột, hoặc ghi nhãn từng giá trị (STK:...|Họ tên:...|Ngân hàng:...).</small>
                 </label>
                 <label className="file-input">
                   <Upload size={16} />
