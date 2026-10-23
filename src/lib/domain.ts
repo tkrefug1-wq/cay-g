@@ -36,6 +36,20 @@ const fieldAliases: Record<string, DataField> = {
 };
 const normalizeLabel = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/đ/g, 'd').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
 const fieldFromLabel = (value: string) => fieldAliases[normalizeLabel(value)];
+const knownBanks = new Set([
+  'abbank', 'acb', 'agribank', 'bac a bank', 'baoviet bank', 'bidv', 'cake', 'cbbank', 'cimb', 'dbs', 'dong a bank',
+  'eximbank', 'gpbank', 'hdbank', 'hong leong bank', 'hsbc', 'ibk', 'indovina bank', 'kienlongbank', 'lpbank', 'mb',
+  'mbbank', 'msb', 'nam a bank', 'ncb', 'ocb', 'oceanbank', 'pgbank', 'pvcombank', 'sacombank', 'saigonbank',
+  'scb', 'seabank', 'shinhan bank', 'shb', 'standard chartered', 'techcombank', 'tpbank', 'uob', 'vib', 'viet a bank',
+  'vietbank', 'vietcombank', 'vietinbank', 'vpbank', 'vrb', 'woori bank',
+]);
+function autoOrderThree(fields: string[]) {
+  const stkIndexes = fields.map((value, index) => (/^[\d\s.-]{3,40}$/.test(value) ? index : -1)).filter(index => index >= 0);
+  const bankIndexes = fields.map((value, index) => (knownBanks.has(normalizeLabel(value)) ? index : -1)).filter(index => index >= 0);
+  if (stkIndexes.length !== 1 || bankIndexes.length !== 1 || stkIndexes[0] === bankIndexes[0]) return fields;
+  const nameIndex = [0, 1, 2].find(index => index !== stkIndexes[0] && index !== bankIndexes[0]);
+  return nameIndex === undefined ? fields : [fields[nameIndex], fields[stkIndexes[0]], fields[bankIndexes[0]]];
+}
 
 export function parseData(text: string) {
   const lines = text.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
@@ -63,6 +77,8 @@ export function parseData(text: string) {
     } else if (hasHeader) {
       const values = Object.fromEntries(header.map((field, index) => [field, fields[index]]));
       fields = dataFields.slice(0, fields.length === 3 ? 3 : 10).map(field => values[field] ?? '');
+    } else if (fields.length === 3) {
+      fields = autoOrderThree(fields);
     }
     const [fullName, stk, bank, branch = '', account = '', password = '', pin = '', phone = '', email = '', birthDate = ''] = fields;
     const normalizedStk = stk.replace(/\D/g, '');

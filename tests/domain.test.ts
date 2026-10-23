@@ -85,6 +85,8 @@ test('data fields can be reordered by header or inline labels', () => {
   assert.deepEqual(byHeader[0], { fullName: 'Nguyễn Văn A', normalizedStk: '001234', bank: 'VCB', branch: '', account: '', password: '', pin: '', phone: '', email: '', birthDate: '' });
   const labelled = parseData('Email:a@example.com|PIN rút:123456|Ngân hàng:MB|Ngày sinh:01/01/2000|Họ tên:Nguyễn B|SĐT:0901234567|Mật khẩu:secret|STK:998877|Tài khoản:userb|Chi nhánh:Hà Nội');
   assert.equal(labelled[0].normalizedStk, '998877'); assert.equal(labelled[0].email, 'a@example.com'); assert.equal(labelled[0].branch, 'Hà Nội');
+  const automatic = parseData('19076114350017 | NGUYEN LINH CHI | Techcombank');
+  assert.equal(automatic[0].fullName, 'NGUYEN LINH CHI'); assert.equal(automatic[0].normalizedStk, '19076114350017'); assert.equal(automatic[0].bank, 'Techcombank');
 });
 test('bulk run actions complete and void selected Data atomically', async () => {
   await importData(ctv, 3); await start(ctv, 3);
