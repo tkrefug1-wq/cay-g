@@ -400,6 +400,22 @@ export default function Workspace({ user }: { user: User }) {
         { id: "summary", icon: ChartNoAxesCombined },
       ];
   const toggle = (id: string) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  async function copySelectedKeys() {
+    setError("");
+    try {
+      const response = await fetch("/api/keys/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selected }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error);
+      await navigator.clipboard.writeText(result.lines.join("\n"));
+      setNotice(`Đã sao chép ${result.lines.length} Data`);
+    } catch (err) {
+      setError((err as Error).message || "Không thể sao chép Data");
+    }
+  }
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -677,6 +693,11 @@ export default function Workspace({ user }: { user: User }) {
                   Chọn tất cả {data?.total} kết quả
                 </button>
                 {isAdmin && view === "data" && <button onClick={() => open("assign")}>Giao Data</button>}
+                {!isAdmin && view === "inventory" && (
+                  <button className="primary" disabled={busy || selected.length > 500} onClick={() => void copySelectedKeys()}>
+                    <Copy size={15} /> Sao chép Data
+                  </button>
+                )}
                 {!isAdmin && ["today", "summary"].includes(view) ? (
                   <>
                     <button className="primary" disabled={busy || !!locked} onClick={() => void mutation({ action: "bulkRuns", operation: "COMPLETE", ids: selected, date }, "Đã hoàn thành các Data được chọn")}>

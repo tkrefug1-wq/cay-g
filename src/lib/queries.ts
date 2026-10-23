@@ -94,3 +94,19 @@ export async function keyDetail(actor: Actor, id: string) {
   const fields = [key.fullName, key.normalizedStk, key.bank, key.branch, key.account, decrypt(key.password), decrypt(key.pin), key.phone, key.email, key.birthDate];
   return { id: key.id, fields, archived: key.archived, usages: key.usages };
 }
+
+export async function exportKeys(actor: Actor, ids: string[]) {
+  ensure(ids.length > 0 && ids.length <= 500, 'Chọn từ 1 đến 500 Data mỗi lần');
+  ensure(new Set(ids).size === ids.length, 'Danh sách Data bị lặp');
+  const keys = await db.key.findMany({
+    where: { id: { in: ids }, ...(actor.role === 'ADMIN' ? {} : { ownerId: actor.id }) },
+    select: { id: true, fullName: true, normalizedStk: true, bank: true, branch: true, account: true, password: true, pin: true, phone: true, email: true, birthDate: true },
+  });
+  ensure(keys.length === ids.length, 'Có Data không tồn tại hoặc không thuộc tài khoản của bạn', 403);
+  const byId = new Map(keys.map(key => [key.id, key]));
+  return ids.map(id => {
+    const key = byId.get(id)!;
+    const fields = [key.fullName, key.normalizedStk, key.bank, key.branch, key.account, decrypt(key.password), decrypt(key.pin), key.phone, key.email, key.birthDate];
+    return fields.slice(3).some(Boolean) ? fields.join('|') : fields.slice(0, 3).join('|');
+  });
+}

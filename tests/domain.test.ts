@@ -10,7 +10,7 @@ process.env.DATABASE_URL = testUrl;
 const { db } = await import('../src/lib/db');
 const { mutate, calculate } = await import('../src/lib/service');
 const { day, finance, parseData } = await import('../src/lib/domain');
-const { snapshot, keyDetail } = await import('../src/lib/queries');
+const { snapshot, keyDetail, exportKeys } = await import('../src/lib/queries');
 const { hashPassword, encrypt, decrypt } = await import('../src/lib/security');
 const { signIn } = await import('../src/lib/auth');
 let admin: Actor, ctv: Actor, child: Actor, other: Actor, platform: string, platformB: string;
@@ -87,6 +87,13 @@ test('data fields can be reordered by header or inline labels', () => {
   assert.equal(labelled[0].normalizedStk, '998877'); assert.equal(labelled[0].email, 'a@example.com'); assert.equal(labelled[0].branch, 'Hà Nội');
   const automatic = parseData('19076114350017 | NGUYEN LINH CHI | Techcombank');
   assert.equal(automatic[0].fullName, 'NGUYEN LINH CHI'); assert.equal(automatic[0].normalizedStk, '19076114350017'); assert.equal(automatic[0].bank, 'Techcombank');
+});
+test('worker can bulk copy only owned Data in selected order', async () => {
+  await call(admin, { action: 'import', ownerId: ctv.id, data: 'First|111222|VCB\nSecond|333444|MB' });
+  const keys = await db.key.findMany({ where: { ownerId: ctv.id }, orderBy: { normalizedStk: 'asc' } });
+  const lines = await exportKeys(ctv, [keys[1].id, keys[0].id]);
+  assert.deepEqual(lines, ['Second|333444|MB', 'First|111222|VCB']);
+  await assert.rejects(exportKeys(other, [keys[0].id]), /không thuộc/);
 });
 test('bulk run actions complete and void selected Data atomically', async () => {
   await importData(ctv, 3); await start(ctv, 3);
